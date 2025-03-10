@@ -2,8 +2,10 @@
 #include <cassert>
 #include <mpi.h>
 
-#define N (4)
+//size of global block
+#define N (8)
 
+//assume that r = c = d & p = rcd;
 #define R (2)
 
 #define C (2)
@@ -61,17 +63,11 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
 }
 
 int main() {
-  // int N = 4;  //size of global block
-
   int b = 2; //size of local block
-  
-  int r, c, d, p, id;
-
-  //assume that r = c = d & p = rcd; 
-  r = c = d = 2;
 
   MPI_Init(NULL, NULL);
   
+  int p, id;
   MPI_Comm_rank(MPI_COMM_WORLD, &id);
   MPI_Comm_size(MPI_COMM_WORLD, &p);  
 
@@ -79,49 +75,57 @@ int main() {
 
   //check later
   // [0-3 => 0, 4-7 => 1]
-  int dep_grp = id % (r * c);
+  int dep_grp = id % (R * C);
   MPI_Comm_split(MPI_COMM_WORLD, dep_grp, id, &dep_comm);
 
   // [0,1 => 0, 2,3 => 1 4,5 => 2, 6,7 => 3]
-  int row_grp = id / r;
+  int row_grp = id / R;
   MPI_Comm_split(MPI_COMM_WORLD, row_grp, id, &row_comm);
 
   // [0,1,4,5 => 0, 2,3,6,7 => 1]
-  int col_grp = (row_grp / r) * c + id % d;
+  int col_grp = (row_grp / R) * C + id % D;
   MPI_Comm_split(MPI_COMM_WORLD, col_grp, id, &col_comm); 
 
   int rid, cid, did;
-  did = id / (r * c);
-  rid = (id - (did * r * c)) / c;
-  cid = (id - (did * r * c)) % r;
+  did = id / (R * C);
+  rid = (id - (did * R * C)) / C;
+  cid = (id - (did * R * C)) % R;
 
   // 4 x 4 x 4 local data cube that is block cyclic dist in 2x2x2 blocks
-  // total of 8 blocks per local processor.
-  double *in = (double*) malloc(sizeof(double) * N/r  * N/c * N/d);
-  double *out = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
+  // total of 8 blocks per local processor.                               FIXME
+  double *in = (double*) malloc(sizeof(double) * N/R * N/C * N/D);
+  double *out = (double*) malloc(sizeof(double) * N/R * N/C * N/D);
 
   //init
-  //  for (int i = 0; i < N/r/b; ++i)
-  //    for (int j = 0; j < N/c/b; ++j)
-  //      for (int k = 0; k < N/d/b; ++k)
-	//{
-	  for (int ii = 0; ii < b; ++ii)
-	    for (int jj = 0; jj < b; ++jj)
-	      for (int kk = 0; kk < b; ++kk) {
-		      in[(kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) +  //compute start offsets
-		                                                   kk*N*N + jj*N + ii;
-        }
-	//}
+  for (int i = 0; i < N/R/b; ++i)
+    for (int j = 0; j < N/C/b; ++j)
+      for (int k = 0; k < N/D/b; ++k)
+	     for (int ii = 0; ii < b; ++ii)
+	       for (int jj = 0; jj < b; ++jj)
+	         for (int kk = 0; kk < b; ++kk) {
+		        // in[(kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) +  //compute start offsets
+		        //                                               kk*N*N + jj*N + ii;
+            // in[((k * 32) + (j * 16) + (i * 8)) + (kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
+            //                                                                        (k * 256 + j * 32 + i * 4) + //block offset
+            //                                                                         kk*N*N + jj*N + ii;
+            in[((k * (b*b*b * N/R/b * N/C/b)) +
+                (j * (b*b*b * N/C/b)) + 
+                (i * (b*b*b))) + (kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
+                                                         ((k * N * N * N/D) + (j * N * N/C) + (i * N/R)) + //block offset
+                                                         kk*N*N + jj*N + ii;
+  }
 
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
-	//     for (int i = 0; i < 8; ++i)
-	//       cout<<in[i]<<" ";
-	//     cout<<endl;      
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	    for (int i = 0; i < N/R * N/C * N/D; ++i)
+	      cout<<in[i]<<" ";
+	    cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
+  
+  /* 
 
   // Stencil
   int g = 1;
@@ -310,6 +314,8 @@ int main() {
                corner001_recv, corner, MPI_DOUBLE, corner001_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
+  */
+
   // for (int j = 0; j < p; ++j) {
   //   if (id == j) {
 	//     cout<<id<<" "<<row_above_id<<" "<<row_below_id<<" ";
@@ -321,6 +327,60 @@ int main() {
   
   free(in);
   free(out);
+  /*
+  free(row_above_send);
+  free(row_above_recv);
+  free(row_below_send);
+  free(row_below_recv);
+  free(col_left_send);
+  free(col_left_recv);
+  free(col_right_send);
+  free(col_right_recv);
+  free(dep_back_send);
+  free(dep_back_recv);
+  free(dep_front_send);
+  free(dep_front_recv);
+  free(edge110_111_send);
+  free(edge110_111_recv);
+  free(edge010_011_send);
+  free(edge010_011_recv);
+  free(edge100_101_send); 
+  free(edge100_101_recv);
+  free(edge000_001_send);
+  free(edge000_001_recv);
+  free(edge011_111_send);
+  free(edge011_111_recv);
+  free(edge010_110_send);
+  free(edge010_110_recv);
+  free(edge001_101_send);
+  free(edge001_101_recv);
+  free(edge000_100_send);
+  free(edge000_100_recv);
+  free(edge100_110_send);
+  free(edge100_110_recv);
+  free(edge101_111_send);
+  free(edge101_111_recv);
+  free(edge000_010_send);
+  free(edge000_010_recv);
+  free(edge001_011_send);
+  free(edge001_011_recv);
+  free(corner000_send);
+  free(corner000_recv);
+  free(corner111_send);
+  free(corner111_recv);
+  free(corner010_send);
+  free(corner010_recv);
+  free(corner101_send);
+  free(corner101_recv);
+  free(corner011_send);
+  free(corner011_recv);
+  free(corner100_send);
+  free(corner100_recv);
+  free(corner001_send);
+  free(corner001_recv);
+  free(corner110_send);
+  free(corner110_recv);
+  */
 
   MPI_Finalize();
   
