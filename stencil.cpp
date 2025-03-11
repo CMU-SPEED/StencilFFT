@@ -3,7 +3,7 @@
 #include <mpi.h>
 
 //size of global block
-#define N (8)
+#define N (4)
 
 //assume that r = c = d & p = rcd;
 #define R (2)
@@ -63,7 +63,7 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
 }
 
 int main() {
-  int b = 2; //size of local block
+  int b = 1; //size of local block
 
   MPI_Init(NULL, NULL);
   
@@ -92,9 +92,11 @@ int main() {
   cid = (id - (did * R * C)) % R;
 
   // 4 x 4 x 4 local data cube that is block cyclic dist in 2x2x2 blocks
-  // total of 8 blocks per local processor.                               FIXME
+  // total of 8 blocks per local processor. 
   double *in = (double*) malloc(sizeof(double) * N/R * N/C * N/D);
   double *out = (double*) malloc(sizeof(double) * N/R * N/C * N/D);
+  
+  int b_on_p = (N/R * N/C * N/D) / (b * b * b);
 
   //init
   for (int i = 0; i < N/R/b; ++i)
@@ -103,15 +105,10 @@ int main() {
 	     for (int ii = 0; ii < b; ++ii)
 	       for (int jj = 0; jj < b; ++jj)
 	         for (int kk = 0; kk < b; ++kk) {
-		        // in[(kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) +  //compute start offsets
-		        //                                               kk*N*N + jj*N + ii;
-            // in[((k * 32) + (j * 16) + (i * 8)) + (kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
-            //                                                                        (k * 256 + j * 32 + i * 4) + //block offset
-            //                                                                         kk*N*N + jj*N + ii;
             in[((k * (b*b*b * N/R/b * N/C/b)) +
                 (j * (b*b*b * N/C/b)) + 
                 (i * (b*b*b))) + (kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
-                                                         ((k * N * N * N/D) + (j * N * N/C) + (i * N/R)) + //block offset
+                                                         ((k * N * N * b * D) + (j * N * b * C) + (i * b * R)) + //block offset
                                                          kk*N*N + jj*N + ii;
   }
 
