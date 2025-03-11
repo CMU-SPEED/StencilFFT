@@ -340,7 +340,7 @@ int main() {
 
   MPI_Alltoall(in,
                (N/R * N/C * N/D) / R,
-               MPI_C_FLOAT_COMPLEX,
+               MPI_DOUBLE,
                in, 
                (N/R * N/C * N/D) / R,
                MPI_DOUBLE,
@@ -349,7 +349,6 @@ int main() {
   end = std::chrono::high_resolution_clock::now();
   duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end- start);
   if (id == 0) std::cout << "All to all time: " << duration.count() << " ns" << std::endl;
-  
 
   if (id == 0) cout<<"After All to all in rows"<<endl;
   for (int j = 0; j < p; ++j) {
