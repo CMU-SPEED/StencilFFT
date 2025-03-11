@@ -64,7 +64,7 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
 }
 
 int main() {
-  int b = 1; //size of local block
+  int b = 2; //size of local block
 
   MPI_Init(NULL, NULL);
   
@@ -111,6 +111,7 @@ int main() {
                                                          kk*N*N + jj*N + ii;
   }
 
+  if (id == 0) cout<<"Initial data distribution"<<endl;
   for (int j = 0; j < p; ++j) {
     if (id == j) {
 	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
@@ -331,21 +332,34 @@ int main() {
 
   auto end = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end- start);
-  if (id == 0) {
-    std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
-  }
+  if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
 
   // All to all in the rows
 
   start = std::chrono::high_resolution_clock::now();
 
-
-  // TODO
+  MPI_Alltoall(in,
+               (N/R * N/C * N/D) / R,
+               MPI_C_FLOAT_COMPLEX,
+               in, 
+               (N/R * N/C * N/D) / R,
+               MPI_DOUBLE,
+               row_comm);
 
   end = std::chrono::high_resolution_clock::now();
   duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end- start);
-  if (id == 0) {
-    std::cout << "All to all time: " << duration.count() << " ns" << std::endl;
+  if (id == 0) std::cout << "All to all time: " << duration.count() << " ns" << std::endl;
+  
+
+  if (id == 0) cout<<"After All to all in rows"<<endl;
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	    for (int i = 0; i < N/R * N/C * N/D; ++i)
+	      cout<<in[i]<<" ";
+	    cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
   }
   
   // Clean up
