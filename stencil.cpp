@@ -2,16 +2,14 @@
 #include <cassert>
 #include <mpi.h>
 #include <chrono>
+#include <stdlib.h>
+#include <cmath>
 
-//size of global block
-#define N (4)
-
-//assume that r = c = d & p = rcd;
-#define R (2)
-
-#define C (2)
-
-#define D (2)
+// assume that r = c = d & p = rcd;
+// This will be defined at runtime
+int r = 0; 
+int c = 0;
+int d = 0;
 
 using namespace std;
 
@@ -20,10 +18,10 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
 
   switch (edit_r) {
     case -1:
-      new_rid = (rid == 0) ? (R - 1) : (rid - 1);
+      new_rid = (rid == 0) ? (r - 1) : (rid - 1);
       break;
     case 1:
-      new_rid = (rid + 1) % R;
+      new_rid = (rid + 1) % r;
       break;
     case 0:
       new_rid = rid;
@@ -34,10 +32,10 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
 
   switch (edit_c) {
     case -1:
-      new_cid = (cid == 0) ? (C - 1) : (cid - 1);
+      new_cid = (cid == 0) ? (c - 1) : (cid - 1);
       break;
     case 1:
-      new_cid = (cid + 1) % C;
+      new_cid = (cid + 1) % c;
       break;
     case 0:
       new_cid = cid;
@@ -48,10 +46,10 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
 
   switch (edit_d) {
     case -1:
-      new_did = (did == 0) ? (D - 1) : (did - 1);
+      new_did = (did == 0) ? (d - 1) : (did - 1);
       break;
     case 1:
-      new_did = (did + 1) % D;
+      new_did = (did + 1) % d;
       break;
     case 0:
       new_did = did;
@@ -60,71 +58,90 @@ int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
       assert(false);
   }
 
-  return (new_did * R * C) + (new_rid * C) + new_cid;
+  return (new_did * r * c) + (new_rid * c) + new_cid;
 }
 
-int main() {
-  int b = 2; //size of local block
+int main(int argc, char *argv[]) {
+  if (argc < 3) {
+    cout<<"Please provide global size (N) and block size (b)"<<endl;
+    return 1;
+  }
+
+  //size of global block
+  int N = atoi(argv[1]);
+
+  //size of local block
+  int b = atoi(argv[2]);
 
   MPI_Init(NULL, NULL);
+
+  // int len;
+  // char name[MPI_MAX_PROCESSOR_NAME];
+  // MPI_Get_processor_name(name, &len);
+
+  // printf("%s\n", name);
   
   int p, id;
   MPI_Comm_rank(MPI_COMM_WORLD, &id);
-  MPI_Comm_size(MPI_COMM_WORLD, &p);  
+  MPI_Comm_size(MPI_COMM_WORLD, &p); 
+
+  r = static_cast<int>(std::round(std::cbrt(p)));
+  c = r;
+  d = r;
 
   MPI_Comm row_comm, col_comm, dep_comm;
 
   //check later
   // [0-3 => 0, 4-7 => 1]
-  int dep_grp = id % (R * C);
+  int dep_grp = id % (r * c);
   MPI_Comm_split(MPI_COMM_WORLD, dep_grp, id, &dep_comm);
 
   // [0,1 => 0, 2,3 => 1 4,5 => 2, 6,7 => 3]
-  int row_grp = id / R;
+  int row_grp = id / r;
   MPI_Comm_split(MPI_COMM_WORLD, row_grp, id, &row_comm);
 
   // [0,1,4,5 => 0, 2,3,6,7 => 1]
-  int col_grp = (row_grp / R) * C + id % D;
+  int col_grp = (row_grp / r) * c + id % d;
   MPI_Comm_split(MPI_COMM_WORLD, col_grp, id, &col_comm); 
 
   int rid, cid, did;
-  did = id / (R * C);
-  rid = (id - (did * R * C)) / C;
-  cid = (id - (did * R * C)) % R;
+  did = id / (r * c);
+  rid = (id - (did * r * c)) / c;
+  cid = (id - (did * r * c)) % r;
 
   // 4 x 4 x 4 local data cube that is block cyclic dist in 2x2x2 blocks
   // total of 8 blocks per local processor. 
-  double *in = (double*) malloc(sizeof(double) * N/R * N/C * N/D);
-  double *out = (double*) malloc(sizeof(double) * N/R * N/C * N/D);
+  double *in = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
+  double *out = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
   
   //init
-  for (int i = 0; i < N/R/b; ++i)
-    for (int j = 0; j < N/C/b; ++j)
-      for (int k = 0; k < N/D/b; ++k)
+  for (int i = 0; i < N/r/b; ++i)
+    for (int j = 0; j < N/c/b; ++j)
+      for (int k = 0; k < N/d/b; ++k)
 	     for (int ii = 0; ii < b; ++ii)
 	       for (int jj = 0; jj < b; ++jj)
 	         for (int kk = 0; kk < b; ++kk) {
-            in[((k * (b*b*b * N/R/b * N/C/b)) +
-                (j * (b*b*b * N/C/b)) + 
+            in[((k * (b*b*b * N/r/b * N/c/b)) +
+                (j * (b*b*b * N/c/b)) + 
                 (i * (b*b*b))) + (kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
-                                                         ((k * N * N * b * D) + (j * N * b * C) + (i * b * R)) + //block offset
+                                                         ((k * N * N * b * d) + (j * N * b * c) + (i * b * r)) + //block offset
                                                          kk*N*N + jj*N + ii;
   }
 
-  if (id == 0) cout<<"Initial data distribution"<<endl;
-  for (int j = 0; j < p; ++j) {
-    if (id == j) {
-	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
-	    for (int i = 0; i < N/R * N/C * N/D; ++i)
-	      cout<<in[i]<<" ";
-	    cout<<endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-  }
+  // if (id == 0) cout<<"Initial data distribution"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
+	//       cout<<in[i]<<" ";
+	//     cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
 
   // Stencil
   int g = 1;
-  int b_per_p = (N/R * N/C * N/D) / (b * b * b);
+  int b_per_p = (N/r * N/c * N/d) / (b * b * b);
   int side = b * b * g;
   int total_side = b_per_p * side;
   int edge = b * g * g;
@@ -331,35 +348,63 @@ int main() {
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
   auto end = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end- start);
+  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
 
-  // All to all in the rows
+  // All to all 
 
   start = std::chrono::high_resolution_clock::now();
 
   MPI_Alltoall(in,
-               (N/R * N/C * N/D) / R,
+               (N/r * N/c * N/d) / r,
                MPI_DOUBLE,
                in, 
-               (N/R * N/C * N/D) / R,
+               (N/r * N/c * N/d) / r,
                MPI_DOUBLE,
                row_comm);
 
   end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end- start);
-  if (id == 0) std::cout << "All to all time: " << duration.count() << " ns" << std::endl;
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
 
-  if (id == 0) cout<<"After All to all in rows"<<endl;
-  for (int j = 0; j < p; ++j) {
-    if (id == j) {
-	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
-	    for (int i = 0; i < N/R * N/C * N/D; ++i)
-	      cout<<in[i]<<" ";
-	    cout<<endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-  }
+  start = std::chrono::high_resolution_clock::now();
+
+  MPI_Alltoall(in,
+               (N/r * N/c * N/d) / c,
+               MPI_DOUBLE,
+               in, 
+               (N/r * N/c * N/d) / c,
+               MPI_DOUBLE,
+               col_comm);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
+
+  start = std::chrono::high_resolution_clock::now();
+
+  MPI_Alltoall(in,
+               (N/r * N/c * N/d) / d,
+               MPI_DOUBLE,
+               in, 
+               (N/r * N/c * N/d) / d,
+               MPI_DOUBLE,
+               dep_comm);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all depth time: " << duration.count() << " ns" << std::endl;
+
+  // if (id == 0) cout<<"After All to all in rows"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
+	//       cout<<in[i]<<" ";
+	//     cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
   
   // Clean up
   free(in);
