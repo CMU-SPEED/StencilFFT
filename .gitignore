@@ -1,2 +1,4 @@
 *.x
 .vscode/*
+*.py
+*.txt

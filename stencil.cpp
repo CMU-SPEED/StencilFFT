@@ -78,7 +78,6 @@ int main(int argc, char *argv[]) {
   // int len;
   // char name[MPI_MAX_PROCESSOR_NAME];
   // MPI_Get_processor_name(name, &len);
-
   // printf("%s\n", name);
   
   int p, id;
@@ -113,19 +112,25 @@ int main(int argc, char *argv[]) {
   // total of 8 blocks per local processor. 
   double *in = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
   double *out = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
+
+  // precompute constants
+  long long bbb = b * b * b;
+  long long Nrb = N/r/b;
+  long long Ncb = N/c/b;
   
   //init
-  for (int i = 0; i < N/r/b; ++i)
-    for (int j = 0; j < N/c/b; ++j)
-      for (int k = 0; k < N/d/b; ++k)
-	     for (int ii = 0; ii < b; ++ii)
-	       for (int jj = 0; jj < b; ++jj)
-	         for (int kk = 0; kk < b; ++kk) {
-            in[((k * (b*b*b * N/r/b * N/c/b)) +
-                (j * (b*b*b * N/c/b)) + 
-                (i * (b*b*b))) + (kk*b*b + jj*b + ii)] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
-                                                         ((k * N * N * b * d) + (j * N * b * c) + (i * b * r)) + //block offset
-                                                         kk*N*N + jj*N + ii;
+  for (long long i = 0; i < N/r/b; ++i)
+    for (long long j = 0; j < N/c/b; ++j)
+      for (long long k = 0; k < N/d/b; ++k)
+	     for (long long ii = 0; ii < b; ++ii)
+	       for (long long jj = 0; jj < b; ++jj)
+	         for (long long kk = 0; kk < b; ++kk) {
+            long long index = ((k * (bbb * Nrb * Ncb)) +
+                               (j * (bbb * Ncb)) + 
+                               (i * (bbb))) + (kk*b*b + jj*b + ii);
+            in[index] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
+                        ((k * N * N * b * d) + (j * N * b * c) + (i * b * r)) + //block offset
+                        kk*N*N + jj*N + ii;
   }
 
   // if (id == 0) cout<<"Initial data distribution"<<endl;

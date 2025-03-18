@@ -1,8 +1,8 @@
 #!/bin/bash
 
 p_values=(8)
-N_values=(4 8)
-b_values=(1 2)
+N_values=(64 128 256 512 1024)
+b_values=(1 2 4 8 16 32)
 
 for p in "${p_values[@]}"; do
     for N in "${N_values[@]}"; do
