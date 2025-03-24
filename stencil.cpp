@@ -363,7 +363,7 @@ int main(int argc, char *argv[]) {
   MPI_Alltoall(in,
                (N/r * N/c * N/d) / r,
                MPI_DOUBLE,
-               in, 
+               out, 
                (N/r * N/c * N/d) / r,
                MPI_DOUBLE,
                row_comm);
@@ -377,7 +377,7 @@ int main(int argc, char *argv[]) {
   MPI_Alltoall(in,
                (N/r * N/c * N/d) / c,
                MPI_DOUBLE,
-               in, 
+               out, 
                (N/r * N/c * N/d) / c,
                MPI_DOUBLE,
                col_comm);
@@ -391,7 +391,7 @@ int main(int argc, char *argv[]) {
   MPI_Alltoall(in,
                (N/r * N/c * N/d) / d,
                MPI_DOUBLE,
-               in, 
+               out, 
                (N/r * N/c * N/d) / d,
                MPI_DOUBLE,
                dep_comm);
