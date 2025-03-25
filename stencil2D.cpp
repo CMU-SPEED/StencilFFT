@@ -161,6 +161,7 @@ int main(int argc, char *argv[]) {
   }
 
   // Stencil
+
   int g = 1;
   int b_per_p = (N/r * N/c) / (b * b);
   int edge = b * g;
@@ -318,23 +319,20 @@ int main(int argc, char *argv[]) {
   auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
 
-  // All to all 
+  // FFT
 
-  //local = local.transpose((1, 0, 2, 3))
-  // swap the first two dimensions --> swap i and j
-  //int A = N/r/b;
-  //int B = N/c/b;
-  //for (int i = 0; i < A; i++) {
-    //for (int j = 0; j < B; j++) {
-      //for (int ii = 0; ii < b; ii++) {
-        //for (int jj = 0; jj < b; jj++) {
-          //int src_index = i * (B * b * b) + j * (b * b) + ii * b + jj;
-          //int dst_index = j * (A * b * b) + i * (b * b) + ii * b + jj;
-          //out[dst_index] = Complex(in[src_index].real(), in[src_index].imag());
-        //}
-      //}
-    //}
-  //}
+  // Local transpose: swap i and j
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+          int dst_index = j * (N/r/b * b * b) + i * (b * b) + ii * b + jj;
+          out[dst_index] = Complex(in[src_index].real(), in[src_index].imag());
+        }
+      }
+    }
+  }
 
   //if (id == 0) cout<<"After Local Transpose 1"<<endl;
   //for (int j = 0; j < p; ++j) {
@@ -347,10 +345,8 @@ int main(int argc, char *argv[]) {
     //MPI_Barrier(MPI_COMM_WORLD);
   //}
 
-  // FIXME: i dont think this is generalizable -- think 2 shoud be the block size?
-  //applyFFT(out, 2, (N/r * N/c) / 2, 1);
-
-  // TODO: Local twiddles
+  // FIXME: i dont think this is generalizable -- think 2 should be the block size?
+  applyFFT(out, 2, (N/r * N/c) / 2, 1);
 
   //if (id == 0) cout<<"After FFT 1"<<endl;
   //for (int j = 0; j < p; ++j) {
@@ -363,21 +359,21 @@ int main(int argc, char *argv[]) {
     //MPI_Barrier(MPI_COMM_WORLD);
   //}
 
-  // TODO: Local twiddles
+  // TODO: Local twiddles --> This depends on processor id
 
-  //start = std::chrono::high_resolution_clock::now();
+  start = std::chrono::high_resolution_clock::now();
 
-  //MPI_Alltoall(out,
-               //(N/r * N/c) / r,
-               //MPI_C_DOUBLE_COMPLEX,
-               //in, 
-               //(N/r * N/c) / r,
-               //MPI_C_DOUBLE_COMPLEX,
-               //row_comm);
+  MPI_Alltoall(out,
+               (N/r * N/c) / r,
+               MPI_C_DOUBLE_COMPLEX,
+               in, 
+               (N/r * N/c) / r,
+               MPI_C_DOUBLE_COMPLEX,
+               row_comm);
 
-  //end = std::chrono::high_resolution_clock::now();
-  //duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  //if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
 
   //if (id == 0) cout<<"After All to all in Rows"<<endl;
   //for (int j = 0; j < p; ++j) {
@@ -390,7 +386,7 @@ int main(int argc, char *argv[]) {
     //MPI_Barrier(MPI_COMM_WORLD);
   //}
 
-  // Im not sure if fftw_plan_many_dft can execute the dft we want
+  // Im not sure if fftw_plan_many_dft can execute the dft we want --> reshape data>
   //applyFFT(in, 4, 1, 2);
 
   //if (id == 0) cout<<"After FFT 2"<<endl;
@@ -406,20 +402,18 @@ int main(int argc, char *argv[]) {
 
   // TODO: Global twiddles
 
-  //local = local.transpose((1, 0, 2, 3))
-  //for (int i = 0; i < A; i++) {
-    //for (int j = 0; j < B; j++) {
-      //for (int ii = 0; ii < b; ii++) {
-        //for (int jj = 0; jj < b; jj++) {
-          //// Calculate the index in the source array:
-          //int src_index = i * (B * b * b) + j * (b * b) + ii * b + jj;
-          //// Calculate the index in the destination array, where i and j are swapped:
-          //int dst_index = j * (A * b * b) + i * (b * b) + ii * b + jj;
-          //out[dst_index] = Complex(in[src_index].real(), in[src_index].imag());
-        //}
-      //}
-    //}
-  //}
+  // Local transpose
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+          int dst_index = j * (N/r/b * b * b) + i * (b * b) + ii * b + jj;
+          out[dst_index] = Complex(in[src_index].real(), in[src_index].imag());
+        }
+      }
+    }
+  }
 
   //if (id == 0) cout<<"After Local Transpose 2"<<endl;
   //for (int j = 0; j < p; ++j) {
@@ -432,15 +426,19 @@ int main(int argc, char *argv[]) {
     //MPI_Barrier(MPI_COMM_WORLD);
   //}
 
-  //start = std::chrono::high_resolution_clock::now();
+  start = std::chrono::high_resolution_clock::now();
 
-  //MPI_Alltoall(out,
-               //(N/r * N/c) / c,
-               //MPI_C_DOUBLE_COMPLEX,
-               //in, 
-               //(N/r * N/c) / c,
-               //MPI_C_DOUBLE_COMPLEX,
-               //col_comm);
+  MPI_Alltoall(out,
+               (N/r * N/c) / c,
+               MPI_C_DOUBLE_COMPLEX,
+               in, 
+               (N/r * N/c) / c,
+               MPI_C_DOUBLE_COMPLEX,
+               col_comm);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
 
   //if (id == 0) cout<<"After All to all in Cols"<<endl;
   //for (int j = 0; j < p; ++j) {
@@ -452,10 +450,6 @@ int main(int argc, char *argv[]) {
     //}
     //MPI_Barrier(MPI_COMM_WORLD);
   //}
-
-  //end = std::chrono::high_resolution_clock::now();
-  //duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  //if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
 
   // Clean up
   free(in);
