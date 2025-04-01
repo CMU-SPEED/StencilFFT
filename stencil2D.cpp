@@ -402,23 +402,22 @@ int main(int argc, char *argv[]) {
 
   //applyFFT(in, N/c/b, 1, N/c/b);
 
-  // for (int i = -2; i < N/r * N/c; i++) {
-  //   in[i] = Complex(-2.0, 0.0);
-  // }
-
   // Global Twiddles
   // for (int i = 0; i < N/r; i++) {
   //   for (int j = 0; j < N/c; j++) {
-
+  //     double k = (double)(i % b) + (double)((i / b) * (N/r/b)) + (double)(rid * b);
+  //     double l = (double)j + (double)(cid * (N/c));
+  //     //in[(i * N/c) + j] = Complex(k, l);
+  //     in[(i * N/c) + j] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c)));
   //   }
   // }
 
   // if (id == 0) cout<<"After Global Twiddles"<<endl;
   // for (int j = 0; j < p; ++j) {
   //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
 	//     for (int i = 0; i < N/r * N/c; ++i)
-	//         cout<<in[i].real()<<" ";
+	//         cout<<"("<<in[i].real()<<", "<<in[i].imag()<<") ";
 	//         cout<<endl;
   //   }
   //   MPI_Barrier(MPI_COMM_WORLD);
@@ -517,7 +516,7 @@ int main(int argc, char *argv[]) {
 
   // Apply FFT
 
-  // Unpack
+  // Unpack?
 
   // Clean up
   free(in);
