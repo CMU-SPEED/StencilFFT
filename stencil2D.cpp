@@ -144,6 +144,7 @@ int main(int argc, char *argv[]) {
           double real = (rid*N*b + cid*b) +               //processor offset
                           (j * N * b * c) + (i * b * r) + //block offset
                           (jj*N + ii);
+          //double real = 1.0;
           in[(j * b * b * N/c/b) +
              (i * b * b) + 
              (jj*b + ii)] = Complex(real, 0.0);
@@ -334,34 +335,9 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  //if (id == 0) cout<<"After Local Transpose 1"<<endl;
-  //for (int j = 0; j < p; ++j) {
-    //if (id == j) {
-	    //cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
-	    //for (int i = 0; i < N/r * N/c; ++i)
-	        //cout<<out[i].real()<<" ";
-	        //cout<<endl;
-    //}
-    //MPI_Barrier(MPI_COMM_WORLD);
-  //}
+  // applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
 
-  // FIXME: i dont think this is generalizable -- think 2 should be the block size?
-  applyFFT(out, 2, (N/r * N/c) / 2, 1);
-
-  //if (id == 0) cout<<"After FFT 1"<<endl;
-  //for (int j = 0; j < p; ++j) {
-    //if (id == j) {
-	    //cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
-	    //for (int i = 0; i < N/r * N/c; ++i)
-	        //cout<<"("<<out[i].real()<<", "<<out[i].imag()<<")"<<" ";
-	        //cout<<endl;
-    //}
-    //MPI_Barrier(MPI_COMM_WORLD);
-  //}
-
-  // TODO: Local twiddles --> This depends on processor id
-
-  start = std::chrono::high_resolution_clock::now();
+  // start = std::chrono::high_resolution_clock::now();
 
   MPI_Alltoall(out,
                (N/r * N/c) / r,
@@ -371,36 +347,9 @@ int main(int argc, char *argv[]) {
                MPI_C_DOUBLE_COMPLEX,
                row_comm);
 
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
-
-  //if (id == 0) cout<<"After All to all in Rows"<<endl;
-  //for (int j = 0; j < p; ++j) {
-    //if (id == j) {
-	    //cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
-	    //for (int i = 0; i < N/r * N/c; ++i)
-	        //cout<<in[i].real()<<" ";
-	        //cout<<endl;
-    //}
-    //MPI_Barrier(MPI_COMM_WORLD);
-  //}
-
-  // Im not sure if fftw_plan_many_dft can execute the dft we want --> reshape data>
-  //applyFFT(in, 4, 1, 2);
-
-  //if (id == 0) cout<<"After FFT 2"<<endl;
-  //for (int j = 0; j < p; ++j) {
-    //if (id == j) {
-	    //cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
-	    //for (int i = 0; i < N/r * N/c; ++i)
-	        //cout<<"("<<in[i].real()<<", "<<in[i].imag()<<")"<<" ";
-	        //cout<<endl;
-    //}
-    //MPI_Barrier(MPI_COMM_WORLD);
-  //}
-
-  // TODO: Global twiddles
+  // end = std::chrono::high_resolution_clock::now();
+  // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  // if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
 
   // Local transpose
   for (int i = 0; i < N/r/b; i++) {
@@ -415,18 +364,94 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  //if (id == 0) cout<<"After Local Transpose 2"<<endl;
-  //for (int j = 0; j < p; ++j) {
-    //if (id == j) {
-	    //cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
-	    //for (int i = 0; i < N/r * N/c; ++i)
-	        //cout<<out[i].real()<<" ";
-	        //cout<<endl;
-    //}
-    //MPI_Barrier(MPI_COMM_WORLD);
-  //}
+  // Pack data in order to apply fft and local twiddles
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      int block_offset = (i * b * b * N/c/b) + (j * b * b);
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int row_offset = (i * N/r * b) + (ii * N/r);
+          int col_offset = ((j % c) * N/c/b) + ((j / c) * b) + jj;
+          in[row_offset + col_offset] = out[block_offset + (ii * b + jj)];
+        }
+      }
+    }
+  }
 
-  start = std::chrono::high_resolution_clock::now();
+  // Local twiddles -- Double check correctness, specifically in row w/ the scalar on cid
+  // for (int i = 0; i < N/r; i++) {
+  //   for (int j = 0; j < N/c; j += N/c/b) {
+  //     for (int jj = 0; jj < N/c/b; jj++) {
+  //       double k = (double)jj;  // col
+  //       double l = (double)(j / (N/c/b)) + (double)(cid* b); // row 
+  //       in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c/b)));
+  //     }
+  //   }
+  // }
+
+  // if (id == 0) cout<<"After Local Twiddles"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
+	//     for (int i = 0; i < N/r * N/c; ++i)
+	//         cout<<"("<<in[i].real()<<", "<<in[i].imag()<<") ";
+	//         cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
+  //applyFFT(in, N/c/b, 1, N/c/b);
+
+  // for (int i = -2; i < N/r * N/c; i++) {
+  //   in[i] = Complex(-2.0, 0.0);
+  // }
+
+  // Global Twiddles
+  // for (int i = 0; i < N/r; i++) {
+  //   for (int j = 0; j < N/c; j++) {
+
+  //   }
+  // }
+
+  // if (id == 0) cout<<"After Global Twiddles"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	//     for (int i = 0; i < N/r * N/c; ++i)
+	//         cout<<in[i].real()<<" ";
+	//         cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
+  // Unpack
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      int block_offset = (i * b * b * N/c/b) + (j * b * b);
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int row_offset = (i * N/r * b) + (ii * N/r);
+          int col_offset = ((j % c) * N/c/b) + ((j / c) * b) + jj;
+          out[block_offset + (ii * b + jj)] = in[row_offset + col_offset];
+        }
+      }
+    }
+  }
+
+  // if (id == 0) cout<<"After Unpack"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
+	//     for (int i = 0; i < N/r * N/c; ++i)
+  //       cout<<out[i].real()<<" ";
+	//     cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
+  //applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
+
+  //start = std::chrono::high_resolution_clock::now();
 
   MPI_Alltoall(out,
                (N/r * N/c) / c,
@@ -436,9 +461,9 @@ int main(int argc, char *argv[]) {
                MPI_C_DOUBLE_COMPLEX,
                col_comm);
 
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
+  //end = std::chrono::high_resolution_clock::now();
+  //duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  //if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
 
   //if (id == 0) cout<<"After All to all in Cols"<<endl;
   //for (int j = 0; j < p; ++j) {
@@ -450,6 +475,49 @@ int main(int argc, char *argv[]) {
     //}
     //MPI_Barrier(MPI_COMM_WORLD);
   //}
+
+  // Pack -- transpose first so we can apply the same packing routine, twiddles, and fft
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+          int dst_index = j * (N/r/b * b * b) + i * (b * b) + jj * b + ii;
+          out[dst_index] = in[src_index];
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      int block_offset = (i * b * b * N/c/b) + (j * b * b);
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int row_offset = (i * N/r * b) + (ii * N/r);
+          int col_offset = ((j % c) * N/c/b) + ((j / c) * b) + jj;
+          in[row_offset + col_offset] = out[block_offset + (ii * b + jj)];
+        }
+      }
+    }
+  }
+
+  // if (id == 0) cout<<"After Packing 2"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	//     for (int i = 0; i < N/r * N/c; ++i)
+	//         cout<<in[i].real()<<" ";
+	//         cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
+  // Local twiddles
+
+  // Apply FFT
+
+  // Unpack
 
   // Clean up
   free(in);
