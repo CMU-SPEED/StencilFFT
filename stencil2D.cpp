@@ -141,10 +141,10 @@ int main(int argc, char *argv[]) {
     for (int j = 0; j < N/c/b; j++)
       for (int ii = 0; ii < b; ii++) 
         for (int jj = 0; jj < b; jj++) {
-          double real = (rid*N*b + cid*b) +               //processor offset
-                          (j * N * b * c) + (i * b * r) + //block offset
-                          (jj*N + ii);
-          //double real = 1.0;
+          // double real = (rid*N*b + cid*b) +               //processor offset
+          //                 (j * N * b * c) + (i * b * r) + //block offset
+          //                 (jj*N + ii);
+          double real = 1.0;
           in[(j * b * b * N/c/b) +
              (i * b * b) + 
              (jj*b + ii)] = Complex(real, 0.0);
@@ -335,7 +335,7 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
+  applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
 
   // start = std::chrono::high_resolution_clock::now();
 
@@ -379,15 +379,15 @@ int main(int argc, char *argv[]) {
   }
 
   // Local twiddles -- Double check correctness, specifically in row w/ the scalar on cid
-  // for (int i = 0; i < N/r; i++) {
-  //   for (int j = 0; j < N/c; j += N/c/b) {
-  //     for (int jj = 0; jj < N/c/b; jj++) {
-  //       double k = (double)jj;  // col
-  //       double l = (double)(j / (N/c/b)) + (double)(cid* b); // row 
-  //       in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c/b)));
-  //     }
-  //   }
-  // }
+  for (int i = 0; i < N/r; i++) {
+    for (int j = 0; j < N/c; j += N/c/b) {
+      for (int jj = 0; jj < N/c/b; jj++) {
+        double k = (double)jj;  // col
+        double l = (double)(j / (N/c/b)) + (double)(cid* b); // row 
+        in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c/b)));
+      }
+    }
+  }
 
   // if (id == 0) cout<<"After Local Twiddles"<<endl;
   // for (int j = 0; j < p; ++j) {
@@ -400,17 +400,17 @@ int main(int argc, char *argv[]) {
   //   MPI_Barrier(MPI_COMM_WORLD);
   // }
 
-  //applyFFT(in, N/c/b, 1, N/c/b);
+  applyFFT(in, N/c/b, 1, N/c/b);
 
   // Global Twiddles
-  // for (int i = 0; i < N/r; i++) {
-  //   for (int j = 0; j < N/c; j++) {
-  //     double k = (double)(i % b) + (double)((i / b) * (N/r/b)) + (double)(rid * b);
-  //     double l = (double)j + (double)(cid * (N/c));
-  //     //in[(i * N/c) + j] = Complex(k, l);
-  //     in[(i * N/c) + j] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c)));
-  //   }
-  // }
+  for (int i = 0; i < N/r; i++) {
+    for (int j = 0; j < N/c; j++) {
+      double k = (double)(i % b) + (double)((i / b) * (N/r/b)) + (double)(rid * b);
+      double l = (double)j + (double)(cid * (N/c));
+      //in[(i * N/c) + j] = Complex(k, l);
+      in[(i * N/c) + j] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c)));
+    }
+  }
 
   // if (id == 0) cout<<"After Global Twiddles"<<endl;
   // for (int j = 0; j < p; ++j) {
@@ -448,7 +448,7 @@ int main(int argc, char *argv[]) {
   //   MPI_Barrier(MPI_COMM_WORLD);
   // }
 
-  //applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
+  applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
 
   //start = std::chrono::high_resolution_clock::now();
 
@@ -513,10 +513,54 @@ int main(int argc, char *argv[]) {
   // }
 
   // Local twiddles
+  for (int i = 0; i < N/r; i++) {
+    for (int j = 0; j < N/c; j += N/c/b) {
+      for (int jj = 0; jj < N/c/b; jj++) {
+        double k = (double)jj;  // col
+        double l = (double)(j / (N/c/b)) + (double)(cid* b); // row 
+        in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N/c/b)));
+      }
+    }
+  }
 
-  // Apply FFT
+  applyFFT(in, N/c/b, 1, N/c/b);
 
-  // Unpack?
+  // Unpack
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      int block_offset = (i * b * b * N/c/b) + (j * b * b);
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int row_offset = (i * N/r * b) + (ii * N/r);
+          int col_offset = ((j % c) * N/c/b) + ((j / c) * b) + jj;
+          out[block_offset + (ii * b + jj)] = in[row_offset + col_offset];
+        }
+      }
+    }
+  }
+
+  for (int i = 0; i < N/r/b; i++) {
+    for (int j = 0; j < N/c/b; j++) {
+      for (int ii = 0; ii < b; ii++) {
+        for (int jj = 0; jj < b; jj++) {
+          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+          int dst_index = j * (N/r/b * b * b) + i * (b * b) + jj * b + ii;
+          in[src_index] = out[dst_index];
+        }
+      }
+    }
+  }
+
+  if (id == 0) cout<<"End Result"<<endl;
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	    for (int i = 0; i < N/r * N/c; ++i)
+	        cout<<in[i].real()<<" ";
+	        cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
 
   // Clean up
   free(in);
