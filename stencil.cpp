@@ -4,6 +4,8 @@
 #include <chrono>
 #include <stdlib.h>
 #include <cmath>
+#include <complex>
+#include <fftw3.h>
 
 // assume that r = c = d & p = rcd;
 // This will be defined at runtime
@@ -12,6 +14,7 @@ int c = 0;
 int d = 0;
 
 using namespace std;
+using Complex = std::complex<double>;
 
 int calc_id(int rid, int cid, int did, int edit_r, int edit_c, int edit_d) {
   int new_rid, new_cid, new_did;
@@ -110,24 +113,25 @@ int main(int argc, char *argv[]) {
 
   // 4 x 4 x 4 local data cube that is block cyclic dist in 2x2x2 blocks
   // total of 8 blocks per local processor. 
-  double *in = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
-  double *out = (double*) malloc(sizeof(double) * N/r * N/c * N/d);
+  Complex *in = (Complex*) malloc(sizeof(Complex) * N/r * N/c * N/d);
+  Complex *out = (Complex*) malloc(sizeof(Complex) * N/r * N/c * N/d);
 
   // precompute constants
-  long long bbb = b * b * b;
-  long long Nrb = N/r/b;
-  long long Ncb = N/c/b;
+  size_t bbb = b * b * b;
+  size_t Nrb = N/r/b;
+  size_t Ncb = N/c/b;
+  size_t Ndb = N/d/b;
   
   //init
-  for (long long i = 0; i < N/r/b; ++i)
-    for (long long j = 0; j < N/c/b; ++j)
-      for (long long k = 0; k < N/d/b; ++k)
-	     for (long long ii = 0; ii < b; ++ii)
-	       for (long long jj = 0; jj < b; ++jj)
-	         for (long long kk = 0; kk < b; ++kk) {
-            long long index = ((k * (bbb * Nrb * Ncb)) +
-                               (j * (bbb * Ncb)) + 
-                               (i * (bbb))) + (kk*b*b + jj*b + ii);
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+	     for (size_t ii = 0; ii < b; ++ii)
+	       for (size_t jj = 0; jj < b; ++jj)
+	         for (size_t kk = 0; kk < b; ++kk) {
+            size_t index = ((k * (bbb * Nrb * Ncb)) +
+                           (j * (bbb * Ncb)) + 
+                           (i * (bbb))) + (kk*b*b + jj*b + ii);
             in[index] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
                         ((k * N * N * b * d) + (j * N * b * c) + (i * b * r)) + //block offset
                         kk*N*N + jj*N + ii;
@@ -136,7 +140,7 @@ int main(int argc, char *argv[]) {
   // if (id == 0) cout<<"Initial data distribution"<<endl;
   // for (int j = 0; j < p; ++j) {
   //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
 	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
 	//       cout<<in[i]<<" ";
 	//     cout<<endl;
@@ -158,247 +162,306 @@ int main(int argc, char *argv[]) {
 
   // above_recv contains the data you recieve from the processor above you
   // below_recv contains the data you recieve from the processor below you
-  double *row_above_send = (double*) malloc(sizeof(double) * total_side);
-  double *row_above_recv = (double*) malloc(sizeof(double) * total_side);
-  double *row_below_send = (double*) malloc(sizeof(double) * total_side);
-  double *row_below_recv = (double*) malloc(sizeof(double) * total_side);
+  Complex *row_above_send = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *row_above_recv = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *row_below_send = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *row_below_recv = (Complex*) malloc(sizeof(Complex) * total_side);
   int row_above_id = calc_id(rid, cid, did, -1, 0, 0);
   int row_below_id = calc_id(rid, cid, did, 1, 0, 0);
 
-  double *col_left_send = (double*) malloc(sizeof(double) * total_side);
-  double *col_left_recv = (double*) malloc(sizeof(double) * total_side);
-  double *col_right_send = (double*) malloc(sizeof(double) * total_side);
-  double *col_right_recv = (double*) malloc(sizeof(double) * total_side);
+  Complex *col_left_send = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *col_left_recv = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *col_right_send = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *col_right_recv = (Complex*) malloc(sizeof(Complex) * total_side);
   int col_left_id = calc_id(rid, cid, did, 0, -1, 0);
   int col_right_id = calc_id(rid, cid, did, 0, 1, 0);
 
-  double *dep_back_send = (double*) malloc(sizeof(double) * total_side);
-  double *dep_back_recv = (double*) malloc(sizeof(double) * total_side);
-  double *dep_front_send = (double*) malloc(sizeof(double) * total_side);
-  double *dep_front_recv = (double*) malloc(sizeof(double) * total_side);
+  Complex *dep_back_send = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *dep_back_recv = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *dep_front_send = (Complex*) malloc(sizeof(Complex) * total_side);
+  Complex *dep_front_recv = (Complex*) malloc(sizeof(Complex) * total_side);
   int dep_back_id = calc_id(rid, cid, did, 0, 0, -1);
   int dep_front_id = calc_id(rid, cid, did, 0, 0, 1);
 
+  // Pack side data for stencil
+  for (size_t i = 0; i < b_per_p; i++) {
+    size_t top_block_offset = i * bbb;
+
+    // Row above -- this is actually the col
+    for (size_t j = 0; j < g; j++) {
+      for (size_t ii = 0; ii < b; ii++) {
+        for (size_t jj = 0; jj < b; jj++) {
+          row_above_send[(i * side) + 
+                         (j * b * b) +
+                         (ii * b) + jj] = in[top_block_offset + 
+                                            (j * b * b) + 
+                                            (ii * b) + jj];
+        }
+      }
+    }
+
+  }
+
+  if (id == 0) cout<<"Side"<<endl;
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	    for (int i = 0; i < total_side; ++i)
+	        cout<<row_above_send[i].real()<<" ";
+	        cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
+
   // Top right edge and top left edge
-  double *edge110_111_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge110_111_recv = (double*) malloc(sizeof(double) * total_edge);
-  double *edge010_011_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge010_011_recv = (double*) malloc(sizeof(double) * total_edge);
+  Complex *edge110_111_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge110_111_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge010_011_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge010_011_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge110_111_id = calc_id(rid, cid, did, 1, 1, 0);
   int edge010_011_id = calc_id(rid, cid, did, -1, 1, 0);
 
   // Bottom right edge and bottom left edge
-  double *edge100_101_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge100_101_recv = (double*) malloc(sizeof(double) * total_edge);
-  double *edge000_001_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge000_001_recv = (double*) malloc(sizeof(double) * total_edge);
+  Complex *edge100_101_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge100_101_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge000_001_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge000_001_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge100_101_id = calc_id(rid, cid, did, 1, -1, 0);
   int edge000_001_id = calc_id(rid, cid, did, -1, -1, 0);
 
   // Top front edge and top back edge
-  double *edge011_111_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge011_111_recv = (double*) malloc(sizeof(double) * total_edge);
-  double *edge010_110_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge010_110_recv = (double*) malloc(sizeof(double) * total_edge);
+  Complex *edge011_111_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge011_111_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge010_110_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge010_110_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge011_111_id = calc_id(rid, cid, did, 0, 1, 1);
   int edge010_110_id = calc_id(rid, cid, did, 0, 1, -1);
 
   // Bottom front edge and bottom back edge
-  double *edge001_101_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge001_101_recv = (double*) malloc(sizeof(double) * total_edge);
-  double *edge000_100_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge000_100_recv = (double*) malloc(sizeof(double) * total_edge);
+  Complex *edge001_101_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge001_101_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge000_100_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge000_100_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge001_101_id = calc_id(rid, cid, did, 0, -1, 1);
   int edge000_100_id = calc_id(rid, cid, did, 0, -1, -1);
 
   // Right back edge and right front edge
-  double *edge100_110_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge100_110_recv = (double*) malloc(sizeof(double) * total_edge);
-  double *edge101_111_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge101_111_recv = (double*) malloc(sizeof(double) * total_edge);
+  Complex *edge100_110_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge100_110_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge101_111_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge101_111_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge100_110_id = calc_id(rid, cid, did, 1, 0, -1);
   int edge101_111_id = calc_id(rid, cid, did, 1, 0, 1);
 
   // Left back edge and left front edge
-  double *edge000_010_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge000_010_recv = (double*) malloc(sizeof(double) * total_edge);
-  double *edge001_011_send = (double*) malloc(sizeof(double) * total_edge);
-  double *edge001_011_recv = (double*) malloc(sizeof(double) * total_edge);
+  Complex *edge000_010_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge000_010_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge001_011_send = (Complex*) malloc(sizeof(Complex) * total_edge);
+  Complex *edge001_011_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge000_010_id = calc_id(rid, cid, did, -1, 0, -1);
   int edge001_011_id = calc_id(rid, cid, did, -1, 0, 1);
 
   // Top front right corner and bottom back left corner
-  double *corner000_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner000_recv = (double*) malloc(sizeof(double) * total_corner);
-  double *corner111_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner111_recv = (double*) malloc(sizeof(double) * total_corner);
+  Complex *corner000_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner000_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner111_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner111_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
   int corner000_id = calc_id(rid, cid, did, -1, -1, -1);
   int corner111_id = calc_id(rid, cid, did, 1, 1, 1);
 
   // Bottom front right corner and top back left corner
-  double *corner010_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner010_recv = (double*) malloc(sizeof(double) * total_corner);
-  double *corner101_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner101_recv = (double*) malloc(sizeof(double) * total_corner);
+  Complex *corner010_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner010_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner101_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner101_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
   int corner010_id = calc_id(rid, cid, did, -1, 1, -1);
   int corner101_id = calc_id(rid, cid, did, 1, -1, 1);
 
   // Top front left corner and bottom back right corner
-  double *corner011_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner011_recv = (double*) malloc(sizeof(double) * total_corner);
-  double *corner100_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner100_recv = (double*) malloc(sizeof(double) * total_corner);
+  Complex *corner011_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner011_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner100_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner100_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
   int corner011_id = calc_id(rid, cid, did, -1, 1, 1);
   int corner100_id = calc_id(rid, cid, did, 1, -1, -1);
 
   // Bottom front left corner and top back right corner
-  double *corner001_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner001_recv = (double*) malloc(sizeof(double) * total_corner);
-  double *corner110_send = (double*) malloc(sizeof(double) * total_corner);
-  double *corner110_recv = (double*) malloc(sizeof(double) * total_corner);
+  Complex *corner001_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner001_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner110_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner110_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
   int corner001_id = calc_id(rid, cid, did, -1, -1, 1);
   int corner110_id = calc_id(rid, cid, did, 1, 1, -1);
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  MPI_Sendrecv(row_above_send, total_side, MPI_DOUBLE, row_above_id, 0,
-               row_below_recv, total_side, MPI_DOUBLE, row_below_id, MPI_ANY_TAG,
+  MPI_Sendrecv(row_above_send, total_side, MPI_C_DOUBLE_COMPLEX, row_above_id, 0,
+               row_below_recv, total_side, MPI_C_DOUBLE_COMPLEX, row_below_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(row_below_send, total_side, MPI_DOUBLE, row_below_id, 0,
-               row_above_recv, total_side, MPI_DOUBLE, row_above_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  
-  MPI_Sendrecv(col_left_send, total_side, MPI_DOUBLE, col_left_id, 0,
-               col_right_recv, total_side, MPI_DOUBLE, col_right_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(col_right_send, total_side, MPI_DOUBLE, col_right_id, 0,
-               col_left_recv, total_side, MPI_DOUBLE, col_left_id, MPI_ANY_TAG,
+  MPI_Sendrecv(row_below_send, total_side, MPI_C_DOUBLE_COMPLEX, row_below_id, 0,
+               row_above_recv, total_side, MPI_C_DOUBLE_COMPLEX, row_above_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
   
-  MPI_Sendrecv(dep_back_send, total_side, MPI_DOUBLE, dep_back_id, 0,
-               dep_front_recv, total_side, MPI_DOUBLE, dep_front_id, MPI_ANY_TAG,
+  MPI_Sendrecv(col_left_send, total_side, MPI_C_DOUBLE_COMPLEX, col_left_id, 0,
+               col_right_recv, total_side, MPI_C_DOUBLE_COMPLEX, col_right_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(dep_front_send, total_side, MPI_DOUBLE, dep_front_id, 0,
-               dep_back_recv, total_side, MPI_DOUBLE, dep_back_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(edge110_111_send, total_corner, MPI_DOUBLE, edge110_111_id, 0, 
-               edge010_011_recv, total_corner, MPI_DOUBLE, edge010_011_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(edge010_011_send, total_corner, MPI_DOUBLE, edge010_011_id, 0,
-               edge110_111_recv, total_corner, MPI_DOUBLE, edge110_111_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(edge100_101_send, total_corner, MPI_DOUBLE, edge100_101_id, 0, 
-               edge000_001_recv, total_corner, MPI_DOUBLE, edge000_001_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(edge000_001_send, total_corner, MPI_DOUBLE, edge000_001_id, 0,
-               edge100_101_recv, total_corner, MPI_DOUBLE, edge100_101_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(edge011_111_send, total_corner, MPI_DOUBLE, edge011_111_id, 0, 
-               edge010_110_recv, total_corner, MPI_DOUBLE, edge010_110_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(edge010_110_send, total_corner, MPI_DOUBLE, edge010_110_id, 0,
-               edge011_111_recv, total_corner, MPI_DOUBLE, edge011_111_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(edge001_101_send, total_corner, MPI_DOUBLE, edge001_101_id, 0, 
-               edge000_100_recv, total_corner, MPI_DOUBLE, edge000_100_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(edge000_100_send, total_corner, MPI_DOUBLE, edge000_100_id, 0,
-               edge001_101_recv, total_corner, MPI_DOUBLE, edge001_101_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(edge100_110_send, total_corner, MPI_DOUBLE, edge100_110_id, 0, 
-               edge101_111_recv, total_corner, MPI_DOUBLE, edge101_111_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(edge101_111_send, total_corner, MPI_DOUBLE, edge101_111_id, 0,
-               edge100_110_recv, total_corner, MPI_DOUBLE, edge100_110_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(edge000_010_send, total_corner, MPI_DOUBLE, edge000_010_id, 0, 
-               edge001_011_recv, total_corner, MPI_DOUBLE, edge001_011_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(edge001_011_send, total_corner, MPI_DOUBLE, edge001_011_id, 0,
-               edge000_010_recv, total_corner, MPI_DOUBLE, edge000_010_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(corner000_send, total_corner, MPI_DOUBLE, corner000_id, 0, 
-               corner111_recv, total_corner, MPI_DOUBLE, corner111_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(corner111_send, total_corner, MPI_DOUBLE, corner111_id, 0,
-               corner000_recv, total_corner, MPI_DOUBLE, corner000_id, MPI_ANY_TAG,
+  MPI_Sendrecv(col_right_send, total_side, MPI_C_DOUBLE_COMPLEX, col_right_id, 0,
+               col_left_recv, total_side, MPI_C_DOUBLE_COMPLEX, col_left_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
   
-  MPI_Sendrecv(corner010_send, total_corner, MPI_DOUBLE, corner010_id, 0, 
-               corner101_recv, total_corner, MPI_DOUBLE, corner101_id, MPI_ANY_TAG,
+  MPI_Sendrecv(dep_back_send, total_side, MPI_C_DOUBLE_COMPLEX, dep_back_id, 0,
+               dep_front_recv, total_side, MPI_C_DOUBLE_COMPLEX, dep_front_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(corner101_send, total_corner, MPI_DOUBLE, corner101_id, 0,
-               corner010_recv, total_corner, MPI_DOUBLE, corner010_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-
-  MPI_Sendrecv(corner011_send, total_corner, MPI_DOUBLE, corner011_id, 0, 
-               corner100_recv, total_corner, MPI_DOUBLE, corner100_id, MPI_ANY_TAG,
-               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(corner100_send, total_corner, MPI_DOUBLE, corner100_id, 0,
-               corner011_recv, total_corner, MPI_DOUBLE, corner011_id, MPI_ANY_TAG,
+  MPI_Sendrecv(dep_front_send, total_side, MPI_C_DOUBLE_COMPLEX, dep_front_id, 0,
+               dep_back_recv, total_side, MPI_C_DOUBLE_COMPLEX, dep_back_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-  MPI_Sendrecv(corner001_send, total_corner, MPI_DOUBLE, corner001_id, 0, 
-               corner110_recv, total_corner, MPI_DOUBLE, corner110_id, MPI_ANY_TAG,
+  MPI_Sendrecv(edge110_111_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge110_111_id, 0, 
+               edge010_011_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge010_011_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
-  MPI_Sendrecv(corner110_send, total_corner, MPI_DOUBLE, corner110_id, 0,
-               corner001_recv, total_corner, MPI_DOUBLE, corner001_id, MPI_ANY_TAG,
+  MPI_Sendrecv(edge010_011_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge010_011_id, 0,
+               edge110_111_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge110_111_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(edge100_101_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge100_101_id, 0, 
+               edge000_001_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge000_001_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(edge000_001_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge000_001_id, 0,
+               edge100_101_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge100_101_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(edge011_111_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge011_111_id, 0, 
+               edge010_110_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge010_110_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(edge010_110_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge010_110_id, 0,
+               edge011_111_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge011_111_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(edge001_101_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge001_101_id, 0, 
+               edge000_100_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge000_100_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(edge000_100_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge000_100_id, 0,
+               edge001_101_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge001_101_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(edge100_110_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge100_110_id, 0, 
+               edge101_111_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge101_111_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(edge101_111_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge101_111_id, 0,
+               edge100_110_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge100_110_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(edge000_010_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge000_010_id, 0, 
+               edge001_011_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge001_011_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(edge001_011_send, total_corner, MPI_C_DOUBLE_COMPLEX, edge001_011_id, 0,
+               edge000_010_recv, total_corner, MPI_C_DOUBLE_COMPLEX, edge000_010_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(corner000_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner000_id, 0, 
+               corner111_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner111_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(corner111_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner111_id, 0,
+               corner000_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner000_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  
+  MPI_Sendrecv(corner010_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner010_id, 0, 
+               corner101_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner101_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(corner101_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner101_id, 0,
+               corner010_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner010_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(corner011_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner011_id, 0, 
+               corner100_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner100_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(corner100_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner100_id, 0,
+               corner011_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner011_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Sendrecv(corner001_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner001_id, 0, 
+               corner110_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner110_id, MPI_ANY_TAG,
+               MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+  MPI_Sendrecv(corner110_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner110_id, 0,
+               corner001_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner001_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
   auto end = std::chrono::high_resolution_clock::now();
   auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
 
+  // FFT
+
+  //Local transpose: 
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+	     for (size_t ii = 0; ii < b; ++ii)
+	       for (size_t jj = 0; jj < b; ++jj)
+	         for (size_t kk = 0; kk < b; ++kk) {
+            size_t src_index = (i * Ncb * Ndb * bbb) +
+                               (j * Ndb * bbb) +
+                               (k * bbb) + (ii * b * b) + (jj * b) + kk;
+            size_t dst_index = (i * Ncb * Ndb * bbb) +
+                               (k * Ndb * bbb) +
+                               (j * bbb) + (ii * b * b) + (jj * b) + kk;
+            out[dst_index] = in[src_index];
+  }
+
+  // if (id == 0) cout<<"Local Transpose"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
+	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
+	//       cout<<out[i]<<" ";
+	//     cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
   // All to all 
 
-  start = std::chrono::high_resolution_clock::now();
+  // start = std::chrono::high_resolution_clock::now();
 
-  MPI_Alltoall(in,
-               (N/r * N/c * N/d) / r,
-               MPI_DOUBLE,
-               out, 
-               (N/r * N/c * N/d) / r,
-               MPI_DOUBLE,
-               row_comm);
+  // MPI_Alltoall(in,
+  //              (N/r * N/c * N/d) / r,
+  //              MPI_C_DOUBLE_COMPLEX,
+  //              out, 
+  //              (N/r * N/c * N/d) / r,
+  //              MPI_C_DOUBLE_COMPLEX,
+  //              row_comm);
 
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
+  // end = std::chrono::high_resolution_clock::now();
+  // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  // if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
 
-  start = std::chrono::high_resolution_clock::now();
+  // start = std::chrono::high_resolution_clock::now();
 
-  MPI_Alltoall(in,
-               (N/r * N/c * N/d) / c,
-               MPI_DOUBLE,
-               out, 
-               (N/r * N/c * N/d) / c,
-               MPI_DOUBLE,
-               col_comm);
+  // MPI_Alltoall(in,
+  //              (N/r * N/c * N/d) / c,
+  //              MPI_C_DOUBLE_COMPLEX,
+  //              out, 
+  //              (N/r * N/c * N/d) / c,
+  //              MPI_C_DOUBLE_COMPLEX,
+  //              col_comm);
 
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
+  // end = std::chrono::high_resolution_clock::now();
+  // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  // if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
 
-  start = std::chrono::high_resolution_clock::now();
+  // start = std::chrono::high_resolution_clock::now();
 
-  MPI_Alltoall(in,
-               (N/r * N/c * N/d) / d,
-               MPI_DOUBLE,
-               out, 
-               (N/r * N/c * N/d) / d,
-               MPI_DOUBLE,
-               dep_comm);
+  // MPI_Alltoall(in,
+  //              (N/r * N/c * N/d) / d,
+  //              MPI_C_DOUBLE_COMPLEX,
+  //              out, 
+  //              (N/r * N/c * N/d) / d,
+  //              MPI_C_DOUBLE_COMPLEX,
+  //              dep_comm);
 
-  end = std::chrono::high_resolution_clock::now();
-  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  if (id == 0) std::cout << "All to all depth time: " << duration.count() << " ns" << std::endl;
+  // end = std::chrono::high_resolution_clock::now();
+  // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  // if (id == 0) std::cout << "All to all depth time: " << duration.count() << " ns" << std::endl;
 
   // if (id == 0) cout<<"After All to all in rows"<<endl;
   // for (int j = 0; j < p; ++j) {
