@@ -26,7 +26,7 @@ using Complex = std::complex<double>;
  * NOTE: input data distribution is preserved in the output
  * FIXME: This is not performant
 */
-void applyFFT(Complex *data, int subvector_len, int stride, int dist) {
+void applyFFT(Complex *data, int subvector_len, int stride, int dist, int id) {
   //TODO: SOME ASSERT HERE about inputs
 
   // The number of separate transforms to be performed
@@ -54,7 +54,17 @@ void applyFFT(Complex *data, int subvector_len, int stride, int dist) {
                                       output, onembed, ostride, odist,
                                       FFTW_FORWARD, FFTW_ESTIMATE);
 
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  auto start = std::chrono::high_resolution_clock::now();
+
   fftw_execute(plan);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "FFT: " << duration.count() << " ns" << std::endl;
 
   for (int i = 0; i < N/r * N/c; i++) {
     data[i] = Complex(output[i][0], output[i][1]);
@@ -150,16 +160,16 @@ int main(int argc, char *argv[]) {
              (jj*b + ii)] = Complex(real, 0.0);
   }
 
-  if (id == 0) cout<<"Initial data distribution"<<endl;
-  for (int j = 0; j < p; ++j) {
-    if (id == j) {
-	    cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
-	    for (int i = 0; i < N/r * N/c; ++i)
-	        cout<<in[i].real()<<" ";
-	        cout<<endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-  }
+  // if (id == 0) cout<<"Initial data distribution"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	//     for (int i = 0; i < N/r * N/c; ++i)
+	//         cout<<in[i].real()<<" ";
+	//         cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
 
   // Stencil
 
@@ -185,6 +195,26 @@ int main(int argc, char *argv[]) {
   Complex *edge10_11_recv = (Complex*) malloc(sizeof(Complex) * total_edge);
   int edge10_11_id = calc_id(rid, cid, 0, 1); // gets col right
   int edge00_01_id = calc_id(rid, cid, 0, -1); // gets col left
+
+  // Top right and bottom left corner
+  Complex *corner00_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner00_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner11_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner11_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  int corner00_id = calc_id(rid, cid, 1, -1); // below, left
+  int corner11_id = calc_id(rid, cid, -1, 1); // above, right
+
+  // Top left and bottom right corner : (x, y)
+  Complex *corner10_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner10_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner01_send = (Complex*) malloc(sizeof(Complex) * total_corner);
+  Complex *corner01_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
+  int corner01_id = calc_id(rid, cid, -1, -1); // above, left
+  int corner10_id = calc_id(rid, cid, 1, 1); // below, right
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  auto start = std::chrono::high_resolution_clock::now();
 
   // Pack edge data for stencil
   for (int i = 0; i < b_per_p; i++) {
@@ -222,33 +252,6 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  // if (id == 0) cout<<"Edge"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
-	//     for (int i = 0; i < total_edge; ++i)
-	//         cout<<edge10_11_send[i].real()<<" ";
-	//         cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
-
-  // Top right and bottom left corner
-  Complex *corner00_send = (Complex*) malloc(sizeof(Complex) * total_corner);
-  Complex *corner00_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
-  Complex *corner11_send = (Complex*) malloc(sizeof(Complex) * total_corner);
-  Complex *corner11_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
-  int corner00_id = calc_id(rid, cid, 1, -1); // below, left
-  int corner11_id = calc_id(rid, cid, -1, 1); // above, right
-
-  // Top left and bottom right corner : (x, y)
-  Complex *corner10_send = (Complex*) malloc(sizeof(Complex) * total_corner);
-  Complex *corner10_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
-  Complex *corner01_send = (Complex*) malloc(sizeof(Complex) * total_corner);
-  Complex *corner01_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
-  int corner01_id = calc_id(rid, cid, -1, -1); // above, left
-  int corner10_id = calc_id(rid, cid, 1, 1); // below, right
-
   // Pack corner data for stencil
   for (int i = 0; i < b_per_p; i++) {
     int top_block_offset = i * (b * b);
@@ -275,6 +278,23 @@ int main(int argc, char *argv[]) {
     }
   }
 
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  auto end = std::chrono::high_resolution_clock::now();
+  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "Stencil Packing: " << duration.count() << " ns" << std::endl;
+
+  // if (id == 0) cout<<"Edge"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	//     for (int i = 0; i < total_edge; ++i)
+	//         cout<<edge10_11_send[i].real()<<" ";
+	//         cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
   // if (id == 0) cout<<"Corner"<<endl;
   // for (int j = 0; j < p; ++j) {
   //   if (id == j) {
@@ -286,7 +306,9 @@ int main(int argc, char *argv[]) {
   //   MPI_Barrier(MPI_COMM_WORLD);
   // }
 
-  auto start = std::chrono::high_resolution_clock::now();
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   MPI_Sendrecv(edge00_10_send, total_edge, MPI_C_DOUBLE_COMPLEX, edge00_10_id, 0,
                edge01_11_recv, total_edge, MPI_C_DOUBLE_COMPLEX, edge01_11_id, MPI_ANY_TAG,
@@ -315,12 +337,18 @@ int main(int argc, char *argv[]) {
   MPI_Sendrecv(corner01_send, total_corner, MPI_C_DOUBLE_COMPLEX, corner01_id, 0,
                corner10_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner10_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
+
+  MPI_Barrier(MPI_COMM_WORLD);
   
-  auto end = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
 
   // FFT
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   // Local transpose: swap i and j
   for (int i = 0; i < N/r/b; i++) {
@@ -335,9 +363,17 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
+  MPI_Barrier(MPI_COMM_WORLD);
 
-  // start = std::chrono::high_resolution_clock::now();
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "Local Transpose 1: " << duration.count() << " ns" << std::endl;
+
+  applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1, id);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   MPI_Alltoall(out,
                (N/r * N/c) / r,
@@ -347,9 +383,15 @@ int main(int argc, char *argv[]) {
                MPI_C_DOUBLE_COMPLEX,
                row_comm);
 
-  // end = std::chrono::high_resolution_clock::now();
-  // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  // if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   // Local transpose
   for (int i = 0; i < N/r/b; i++) {
@@ -389,7 +431,17 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  applyFFT(in, b * c, 1, b * c);
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "Local Transpose 2, packing, twiddles: " << duration.count() << " ns" << std::endl;
+
+  applyFFT(in, b * c, 1, b * c, id);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   // Unpack
   for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
@@ -405,9 +457,17 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1);
+  MPI_Barrier(MPI_COMM_WORLD);
 
-  //start = std::chrono::high_resolution_clock::now();
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "Unpacking: " << duration.count() << " ns" << std::endl;
+
+  applyFFT(out, N/r/b, (N/r * N/c) / (N/r/b), 1, id);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   MPI_Alltoall(out,
                (N/r * N/c) / c,
@@ -417,9 +477,15 @@ int main(int argc, char *argv[]) {
                MPI_C_DOUBLE_COMPLEX,
                col_comm);
 
-  //end = std::chrono::high_resolution_clock::now();
-  //duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  //if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   // Pack -- transpose first so we can apply the same packing routine, twiddles, and fft
   for (int i = 0; i < N/r/b; i++) {
@@ -452,13 +518,23 @@ int main(int argc, char *argv[]) {
     for (int j = 0; j < N/c; j += N/c/b) {
       for (int jj = 0; jj < N/c/b; jj++) {
         double k = (double)(rid * ((N/(b*c))/c)) + ((j + jj) / (b * c)); // Row
-        double l = (j + jj) % (b * c);      // Col
+        double l = (j + jj) % (b * c);                                   // Col
         in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N))); 
       }
     }
   }
 
-  applyFFT(in, b * c, 1, b * c);
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "packing, twiddles: " << duration.count() << " ns" << std::endl;
+
+  applyFFT(in, b * c, 1, b * c, id);
+
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  start = std::chrono::high_resolution_clock::now();
 
   // Unpack
   for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
@@ -486,16 +562,22 @@ int main(int argc, char *argv[]) {
     }
   }
 
-  if (id == 0) cout<<"End Result"<<endl;
-  for (int j = 0; j < p; ++j) {
-    if (id == j) {
-	    cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
-	    for (int i = 0; i < N/r * N/c; ++i)
-        cout<<"("<<in[i].real()<<", "<<in[i].imag()<<") ";
-	      cout<<endl;
-    }
-    MPI_Barrier(MPI_COMM_WORLD);
-  }
+  MPI_Barrier(MPI_COMM_WORLD);
+
+  end = std::chrono::high_resolution_clock::now();
+  duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  if (id == 0) std::cout << "Unpacking: " << duration.count() << " ns" << std::endl;
+
+  // if (id == 0) cout<<"End Result"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
+	//     for (int i = 0; i < N/r * N/c; ++i)
+  //       cout<<"("<<in[i].real()<<", "<<in[i].imag()<<") ";
+	//       cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
 
   // Clean up
   free(in);
