@@ -6,6 +6,7 @@
 #include <cmath>
 #include <complex>
 #include <fftw3.h>
+#include <omp.h>
 
 // assume that r = c & p = rc;
 // This will be defined at runtime
@@ -13,6 +14,7 @@ int r = 0;
 int c = 0;
 int N = 0;
 int b = 0;
+int t = 0;
 
 using namespace std;
 using Complex = std::complex<double>;
@@ -49,6 +51,9 @@ void applyFFT(Complex *data, int subvector_len, int stride, int dist, int id) {
   int *inembed = nullptr;     // Input array stored contiguously in memory
   int *onembed = nullptr;
 
+  fftw_init_threads();
+  fftw_plan_with_nthreads(4);
+
   fftw_plan plan = fftw_plan_many_dft(rank, n, howmany,
                                       input, inembed, istride, idist,
                                       output, onembed, ostride, odist,
@@ -71,6 +76,7 @@ void applyFFT(Complex *data, int subvector_len, int stride, int dist, int id) {
   }
 
   fftw_destroy_plan(plan);
+  fftw_cleanup_threads();
   fftw_free(input);
   fftw_free(output);
 }
@@ -110,8 +116,8 @@ int calc_id(int rid, int cid, int edit_r, int edit_c) {
 }
 
 int main(int argc, char *argv[]) {
-  if (argc < 3) {
-    cout<<"Please provide global size (N) and block size (b)"<<endl;
+  if (argc < 4) {
+    cout<<"Please provide global size (N), block size (b), and number of thread (t) per processor"<<endl;
     return 1;
   }
 
@@ -120,6 +126,10 @@ int main(int argc, char *argv[]) {
 
   //size of local block
   b = atoi(argv[2]);
+
+  //number of threads
+  t = atoi(argv[3]);
+  omp_set_num_threads(t);
 
   MPI_Init(NULL, NULL);
 
@@ -216,7 +226,7 @@ int main(int argc, char *argv[]) {
 
   auto start = std::chrono::high_resolution_clock::now();
 
-  // Pack edge data for stencil
+  #pragma omp parallel for schedule(static)
   for (int i = 0; i < b_per_p; i++) {
     int top_block_offset = i * (b * b);
     int bottom_block_offset = top_block_offset + (b * (b - g));
@@ -250,12 +260,8 @@ int main(int argc, char *argv[]) {
                                               in[top_block_offset + (j * b) + k + (b - g)].imag());
       }
     }
-  }
 
-  // Pack corner data for stencil
-  for (int i = 0; i < b_per_p; i++) {
-    int top_block_offset = i * (b * b);
-    int bottom_block_offset = top_block_offset + (b * (b - g));
+    // Pack corner data for stencil
     for (int j = 0; j < g; j++) {
       for (int k = 0; k < g; k++) {
         // Bottom left
@@ -351,6 +357,7 @@ int main(int argc, char *argv[]) {
   start = std::chrono::high_resolution_clock::now();
 
   // Local transpose: swap i and j
+  #pragma omp parallel for schedule(static)
   for (int i = 0; i < N/r/b; i++) {
     for (int j = 0; j < N/c/b; j++) {
       for (int ii = 0; ii < b; ii++) {
@@ -393,44 +400,50 @@ int main(int argc, char *argv[]) {
 
   start = std::chrono::high_resolution_clock::now();
 
-  // Local transpose
-  for (int i = 0; i < N/r/b; i++) {
-    for (int j = 0; j < N/c/b; j++) {
-      for (int ii = 0; ii < b; ii++) {
-        for (int jj = 0; jj < b; jj++) {
-          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
-          int dst_index = j * (N/r/b * b * b) + i * (b * b) + ii * b + jj;
-          out[dst_index] = in[src_index];
+  #pragma omp parallel
+  {
+    // Local transpose
+    #pragma omp for schedule(static)
+    for (int i = 0; i < N/r/b; i++) {
+      for (int j = 0; j < N/c/b; j++) {
+        for (int ii = 0; ii < b; ii++) {
+          for (int jj = 0; jj < b; jj++) {
+            int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+            int dst_index = j * (N/r/b * b * b) + i * (b * b) + ii * b + jj;
+            out[dst_index] = in[src_index];
+          }
+        }
+      }
+    }
+
+    // Pack data in order to apply fft and local twiddles
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
+      for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
+        size_t col = (j % c) * ((N/c/b)/c) + (j / c);
+        for (size_t ii = 0; ii < b; ii++) {   // Row inside the block
+          for (size_t jj = 0; jj < b; jj++) { // Col inside the block
+            size_t dst_index = (i * b * b * N/c/b) + (j * b) + (ii * N/c) + jj;
+            size_t src_index = (i * b * b * N/c/b) + (col * b * b) + (ii * b) + jj;
+            in[dst_index] = out[src_index];
+          }
+        }
+      }
+    }
+
+    // Local twiddles 
+    #pragma omp for schedule(static)
+    for (int i = 0; i < N/r; i++) {
+      for (int j = 0; j < N/c; j += N/c/b) {
+        for (int jj = 0; jj < N/c/b; jj++) {
+          double k = (double)(cid * ((N/(b*c))/c)) + ((j + jj) / (b * c)); // Row
+          double l = (j + jj) % (b * c);      // Col
+          in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N))); 
         }
       }
     }
   }
-
-  // Pack data in order to apply fft and local twiddles
-  for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
-    for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
-      size_t col = (j % c) * ((N/c/b)/c) + (j / c);
-      for (size_t ii = 0; ii < b; ii++) {   // Row inside the block
-        for (size_t jj = 0; jj < b; jj++) { // Col inside the block
-          size_t dst_index = (i * b * b * N/c/b) + (j * b) + (ii * N/c) + jj;
-          size_t src_index = (i * b * b * N/c/b) + (col * b * b) + (ii * b) + jj;
-          in[dst_index] = out[src_index];
-        }
-      }
-    }
-  }
-
-  // Local twiddles 
-  for (int i = 0; i < N/r; i++) {
-    for (int j = 0; j < N/c; j += N/c/b) {
-      for (int jj = 0; jj < N/c/b; jj++) {
-        double k = (double)(cid * ((N/(b*c))/c)) + ((j + jj) / (b * c)); // Row
-        double l = (j + jj) % (b * c);      // Col
-        in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N))); 
-      }
-    }
-  }
-
+  
   MPI_Barrier(MPI_COMM_WORLD);
 
   end = std::chrono::high_resolution_clock::now();
@@ -444,6 +457,7 @@ int main(int argc, char *argv[]) {
   start = std::chrono::high_resolution_clock::now();
 
   // Unpack
+  #pragma omp parallel for schedule(static)
   for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
     for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
       size_t col = (j % c) * ((N/c/b)/c) + (j / c);
@@ -487,42 +501,49 @@ int main(int argc, char *argv[]) {
 
   start = std::chrono::high_resolution_clock::now();
 
-  // Pack -- transpose first so we can apply the same packing routine, twiddles, and fft
-  for (int i = 0; i < N/r/b; i++) {
-    for (int j = 0; j < N/c/b; j++) {
-      for (int ii = 0; ii < b; ii++) {
-        for (int jj = 0; jj < b; jj++) {
-          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
-          int dst_index = j * (N/r/b * b * b) + i * (b * b) + jj * b + ii;
-          out[dst_index] = in[src_index];
+  #pragma omp parallel 
+  {
+    // Pack -- transpose first so we can apply the same packing routine, twiddles, and fft
+    #pragma omp for schedule(static)
+    for (int i = 0; i < N/r/b; i++) {
+      for (int j = 0; j < N/c/b; j++) {
+        for (int ii = 0; ii < b; ii++) {
+          for (int jj = 0; jj < b; jj++) {
+            int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+            int dst_index = j * (N/r/b * b * b) + i * (b * b) + jj * b + ii;
+            out[dst_index] = in[src_index];
+          }
+        }
+      }
+    }
+
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
+      for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
+        size_t col = (j % c) * ((N/c/b)/c) + (j / c);
+        for (size_t ii = 0; ii < b; ii++) {   // Row inside the block
+          for (size_t jj = 0; jj < b; jj++) { // Col inside the block
+            size_t dst_index = (i * b * b * N/c/b) + (j * b) + (ii * N/c) + jj;
+            size_t src_index = (i * b * b * N/c/b) + (col * b * b) + (ii * b) + jj;
+            in[dst_index] = out[src_index];
+          }
+        }
+      }
+    }
+
+    // Local twiddles
+    #pragma omp for schedule(static)
+    for (int i = 0; i < N/r; i++) {
+      for (int j = 0; j < N/c; j += N/c/b) {
+        for (int jj = 0; jj < N/c/b; jj++) {
+          double k = (double)(rid * ((N/(b*c))/c)) + ((j + jj) / (b * c)); // Row
+          double l = (j + jj) % (b * c);                                   // Col
+          in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N))); 
         }
       }
     }
   }
-
-  for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
-    for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
-      size_t col = (j % c) * ((N/c/b)/c) + (j / c);
-      for (size_t ii = 0; ii < b; ii++) {   // Row inside the block
-        for (size_t jj = 0; jj < b; jj++) { // Col inside the block
-          size_t dst_index = (i * b * b * N/c/b) + (j * b) + (ii * N/c) + jj;
-          size_t src_index = (i * b * b * N/c/b) + (col * b * b) + (ii * b) + jj;
-          in[dst_index] = out[src_index];
-        }
-      }
-    }
-  }
-
-  // Local twiddles
-  for (int i = 0; i < N/r; i++) {
-    for (int j = 0; j < N/c; j += N/c/b) {
-      for (int jj = 0; jj < N/c/b; jj++) {
-        double k = (double)(rid * ((N/(b*c))/c)) + ((j + jj) / (b * c)); // Row
-        double l = (j + jj) % (b * c);                                   // Col
-        in[(i * N/c) + j + jj] *= std::exp(Complex(0.0, -2*M_PI*k*l/(N))); 
-      }
-    }
-  }
+  
 
   MPI_Barrier(MPI_COMM_WORLD);
 
@@ -537,26 +558,31 @@ int main(int argc, char *argv[]) {
   start = std::chrono::high_resolution_clock::now();
 
   // Unpack
-  for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
-    for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
-      size_t col = (j % c) * ((N/c/b)/c) + (j / c);
-      for (size_t ii = 0; ii < b; ii++) {   // Row inside the block
-        for (size_t jj = 0; jj < b; jj++) { // Col inside the block
-          size_t dst_index = (i * b * b * N/c/b) + (j * b) + (ii * N/c) + jj;
-          size_t src_index = (i * b * b * N/c/b) + (col * b * b) + (ii * b) + jj;
-          out[src_index] = in[dst_index];
+  #pragma omp parallel
+  {
+    #pragma omp for schedule(static)
+    for (size_t i = 0; i < N/r/b; i++) {    // Row of the block
+      for (size_t j = 0; j < N/c/b; j++) {  // Col of the block
+        size_t col = (j % c) * ((N/c/b)/c) + (j / c);
+        for (size_t ii = 0; ii < b; ii++) {   // Row inside the block
+          for (size_t jj = 0; jj < b; jj++) { // Col inside the block
+            size_t dst_index = (i * b * b * N/c/b) + (j * b) + (ii * N/c) + jj;
+            size_t src_index = (i * b * b * N/c/b) + (col * b * b) + (ii * b) + jj;
+            out[src_index] = in[dst_index];
+          }
         }
       }
     }
-  }
 
-  for (int i = 0; i < N/r/b; i++) {
-    for (int j = 0; j < N/c/b; j++) {
-      for (int ii = 0; ii < b; ii++) {
-        for (int jj = 0; jj < b; jj++) {
-          int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
-          int dst_index = j * (N/r/b * b * b) + i * (b * b) + jj * b + ii;
-          in[src_index] = out[dst_index];
+    #pragma omp for schedule(static)
+    for (int i = 0; i < N/r/b; i++) {
+      for (int j = 0; j < N/c/b; j++) {
+        for (int ii = 0; ii < b; ii++) {
+          for (int jj = 0; jj < b; jj++) {
+            int src_index = i * (N/c/b * b * b) + j * (b * b) + ii * b + jj;
+            int dst_index = j * (N/r/b * b * b) + i * (b * b) + jj * b + ii;
+            in[src_index] = out[dst_index];
+          }
         }
       }
     }
