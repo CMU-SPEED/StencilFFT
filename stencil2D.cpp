@@ -52,7 +52,7 @@ void applyFFT(Complex *data, int subvector_len, int stride, int dist, int id) {
   int *onembed = nullptr;
 
   fftw_init_threads();
-  fftw_plan_with_nthreads(4);
+  fftw_plan_with_nthreads(t);
 
   fftw_plan plan = fftw_plan_many_dft(rank, n, howmany,
                                       input, inembed, istride, idist,
