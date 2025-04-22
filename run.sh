@@ -8,7 +8,8 @@ for p in "${p_values[@]}"; do
     for N in "${N_values[@]}"; do
         for b in "${b_values[@]}"; do
             echo "mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n "$p" ./stencil.x "$N" "$b""
-            mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n "$p" ./stencil.x "$N" "$b"
+            #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n "$p" ./stencil.x "$N" "$b"
+            mpiexec --oversubscribe -n "$p" ./stencil.x "$N" "$b"
             echo "------------------------------------------------"
         done
     done

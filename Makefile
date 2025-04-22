@@ -8,7 +8,7 @@ INCLUDE = -I$(LIB_PATH)/include
 
 3D:
 	mpicxx $(FLAGS) $(INCLUDE) stencil.cpp -o stencil.x $(LIB)
-	mpiexec -n 8 ./stencil.x 16 2
+	mpiexec -n 8 ./stencil.x 8 2
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 8 ./stencil.x 512 128
 
 2D:

@@ -583,38 +583,37 @@ int main(int argc, char *argv[]) {
   }
 
   // Pack before All to All
+  for (size_t i = 0; i < r; i++) {
+    for (size_t j = 0; j < Ndb; j++) {
+      size_t tmp = j * (Nrb * Ncb * bbb);
+      size_t src = i * ((Nrb * Ncb * bbb)/r);
+      size_t dest = i * (((Nrb * Ncb * bbb)/r) * Ndb) + j * ((Nrb * Ncb * bbb)/r);
+      for (size_t k = 0; k < (Nrb * Ncb * bbb)/r; k++) {
+        in[dest + k] = out[(tmp + src) + k];
+      }
+    }
+  }
   
   // start = std::chrono::high_resolution_clock::now();
 
-  // MPI_Alltoall(out,
-  //              (N/r * N/c * N/d) / r,
-  //              MPI_C_DOUBLE_COMPLEX,
-  //              in, 
-  //              (N/r * N/c * N/d) / r,
-  //              MPI_C_DOUBLE_COMPLEX,
-  //              row_comm);
+  MPI_Alltoall(in,
+               (N/r * N/c * N/d) / r,
+               MPI_C_DOUBLE_COMPLEX,
+               out, 
+               (N/r * N/c * N/d) / r,
+               MPI_C_DOUBLE_COMPLEX,
+               row_comm);
 
-  // TODO: Change this to do packing
-  for (size_t i = 0; i < Ndb; i++) {
-    size_t offset = i * Nrb * Ncb * bbb;
-    MPI_Alltoall(out + offset,
-                (N/r * N/c * N/d) / Ndb / r,
-                MPI_C_DOUBLE_COMPLEX,
-                in + offset, 
-                (N/r * N/c * N/d) / Ndb / r,
-                MPI_C_DOUBLE_COMPLEX,
-                row_comm);
-  }
-
-  if (id == 0) cout<<"All to all"<<endl;
-  for (int j = 0; j < p; ++j) {
-    if (id == j) {
-	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
-	    for (int i = 0; i < N/r * N/c * N/d; ++i)
-	      cout<<in[i].real()<<" ";
-	    cout<<endl;
+  // Unpack all to all
+  for (size_t i = 0; i < r; i++) {
+    for (size_t j = 0; j < Ndb; j++) {
+      size_t tmp = j * (Nrb * Ncb * bbb);
+      size_t src = i * ((Nrb * Ncb * bbb)/r);
+      size_t dest = i * (((Nrb * Ncb * bbb)/r) * Ndb) + j * ((Nrb * Ncb * bbb)/r);
+      for (size_t k = 0; k < (Nrb * Ncb * bbb)/r; k++) {
+        in[(tmp + src) + k] = out[dest + k];
+      }
     }
-    MPI_Barrier(MPI_COMM_WORLD);
   }
 
   // end = std::chrono::high_resolution_clock::now();
@@ -702,27 +701,40 @@ int main(int argc, char *argv[]) {
     applyFFT(out + offset, N/r/b, (N/r)*b*b, 1, id, (Nrb * Ncb * bbb));
   }
 
+  // Pack before All to All
+  for (size_t i = 0; i < c; i++) {
+    for (size_t j = 0; j < Ndb; j++) {
+      size_t tmp = j * (Nrb * Ncb * bbb);
+      size_t src = i * ((Nrb * Ncb * bbb)/c);
+      size_t dest = i * (((Nrb * Ncb * bbb)/c) * Ndb) + j * ((Nrb * Ncb * bbb)/c);
+      for (size_t k = 0; k < (Nrb * Ncb * bbb)/c; k++) {
+        in[dest + k] = out[(tmp + src) + k];
+      }
+    }
+  }
+
   // start = std::chrono::high_resolution_clock::now();
 
-  // MPI_Alltoall(in,
-  //              (N/r * N/c * N/d) / c,
-  //              MPI_C_DOUBLE_COMPLEX,
-  //              out, 
-  //              (N/r * N/c * N/d) / c,
-  //              MPI_C_DOUBLE_COMPLEX,
-  //              col_comm);
+  MPI_Alltoall(in,
+               (N/r * N/c * N/d) / c,
+               MPI_C_DOUBLE_COMPLEX,
+               out, 
+               (N/r * N/c * N/d) / c,
+               MPI_C_DOUBLE_COMPLEX,
+               col_comm);
 
   // MPI_Barrier(MPI_COMM_WORLD);
 
-  for (size_t i = 0; i < Ndb; i++) {
-    size_t offset = i * Nrb * Ncb * bbb;
-    MPI_Alltoall(out + offset,
-                 (N/r * N/c * N/d) / Ndb / c,
-                 MPI_C_DOUBLE_COMPLEX,
-                 in + offset, 
-                 (N/r * N/c * N/d) / Ndb / c,
-                 MPI_C_DOUBLE_COMPLEX,
-                 col_comm);
+  // Unpack after All to All
+  for (size_t i = 0; i < c; i++) {
+    for (size_t j = 0; j < Ndb; j++) {
+      size_t tmp = j * (Nrb * Ncb * bbb);
+      size_t src = i * ((Nrb * Ncb * bbb)/c);
+      size_t dest = i * (((Nrb * Ncb * bbb)/c) * Ndb) + j * ((Nrb * Ncb * bbb)/c);
+      for (size_t k = 0; k < (Nrb * Ncb * bbb)/c; k++) {
+        in[(tmp + src) + k] = out[dest + k];
+      }
+    }
   }
 
   // end = std::chrono::high_resolution_clock::now();
