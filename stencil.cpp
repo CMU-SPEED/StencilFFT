@@ -477,35 +477,31 @@ int main(int argc, char *argv[]) {
                                    ((b - g) + kk)*b*b +
                                    ((b - g) + ii)*b + jj];
 
-          corner010_send[idx] = in[ top_block_offset 
-                                  + (   kk)*b*b
-                                  + (    ii)*b 
-                                  + (   jj)        ];
+          corner010_send[idx] = in[top_block_offset +
+                                   (kk*b*b) + (ii*b) + jj];
 
-          corner011_send[idx] = in[ top_block_offset 
-                                  + ((b - g)+kk)*b*b
-                                  + (    ii)*b
-                                  + (   jj)        ];
+          corner011_send[idx] = in[top_block_offset +
+                                   ((b - g) + kk)*b*b +
+                                   (ii*b) + jj];
 
-          corner100_send[idx] = in[ top_block_offset 
-                                  + (   kk)*b*b
-                                  + ((b - g)+ii)*b
-                                  + ((b - g)+jj)    ];
+          corner100_send[idx] = in[top_block_offset +
+                                   (kk*b*b) +
+                                   ((b - g) + ii)*b +
+                                   ((b - g) + jj)];
 
-          corner101_send[idx] = in[ top_block_offset 
-                                  + ((b - g)+kk)*b*b
-                                  + ((b - g)+ii)*b
-                                  + ((b - g)+jj)    ];
+          corner101_send[idx] = in[top_block_offset +
+                                   ((b - g) + kk)*b*b +
+                                   ((b - g) + ii)*b +
+                                   ((b - g) + jj)];
 
-          corner110_send[idx] = in[ top_block_offset 
-                                  + (   kk)*b*b
-                                  + (    ii)*b
-                                  + ((b - g)+jj)    ];
+          corner110_send[idx] = in[top_block_offset +
+                                  (kk*b*b) + (ii * b) +
+                                  ((b - g) + jj)];
 
-          corner111_send[idx] = in[ top_block_offset 
-                                  + ((b - g)+kk)*b*b
-                                  + (    ii)*b
-                                  + ((b - g)+jj)    ];
+          corner111_send[idx] = in[top_block_offset +
+                                   ((b - g) + kk)*b*b +
+                                   (ii * b) +
+                                   ((b - g) + jj)];
         }
       }
     }
