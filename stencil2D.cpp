@@ -594,16 +594,16 @@ int main(int argc, char *argv[]) {
   duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   if (id == 0) std::cout << "Unpacking: " << duration.count() << " ns" << std::endl;
 
-  // if (id == 0) cout<<"End Result"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
-	//     for (int i = 0; i < N/r * N/c; ++i)
-  //       cout<<"("<<in[i].real()<<", "<<in[i].imag()<<") ";
-	//       cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
+  if (id == 0) cout<<"End Result"<<endl;
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") | ";
+	    for (int i = 0; i < N/r * N/c; ++i)
+        cout<<"("<<in[i].real()<<", "<<in[i].imag()<<") ";
+	      cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
 
   // Clean up
   free(in);

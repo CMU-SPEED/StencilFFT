@@ -27,9 +27,9 @@ using Complex = std::complex<double>;
  * NOTE: input data distribution is preserved in the output
  * FIXME: This is not performant
 */
-void applyFFT(Complex *data, int subvector_len, int stride, int dist, int id) {
+void applyFFT(Complex *data, int subvector_len, int stride, int dist, int id, size_t size) {
   //TODO: SOME ASSERT HERE about inputs
-  size_t size = (N/r/b) * (N/r/b) * (b*b*b);
+  //size_t size = (N/r/b) * (N/r/b) * (b*b*b);
 
   // The number of separate transforms to be performed
   //int howmany = ((N/r/b) * (N/c/b) * (b*b*b)) / subvector_len;
@@ -198,6 +198,7 @@ int main(int argc, char *argv[]) {
             in[index] = (did*N*N*b + rid * N * b + cid * b) + //processor offset
                         ((k * N * N * b * d) + (j * N * b * c) + (i * b * r)) + //block offset
                         kk*N*N + jj*N + ii;
+            //in[index] = Complex(1.0, 0.0);
   }
 
   if (id == 0) cout<<"Initial data distribution"<<endl;
@@ -223,8 +224,6 @@ int main(int argc, char *argv[]) {
   int corner = g * g * g;
   int total_corner = b_per_p * corner;
 
-  // TODO: Copy data to stencil buffers 
-
   // above_recv contains the data you recieve from the processor above you
   // below_recv contains the data you recieve from the processor below you
   Complex *row_above_send = (Complex*) malloc(sizeof(Complex) * total_side);
@@ -249,60 +248,60 @@ int main(int argc, char *argv[]) {
   int dep_front_id = calc_id(rid, cid, did, 0, 0, 1);
 
   // Pack side data for stencil
-  for (size_t i = 0; i < b_per_p; i++) {
-    size_t top_block_offset = i * bbb;
-    size_t bottom_block_offset = top_block_offset + (b * (b - g) * (b - g));
+  // for (size_t i = 0; i < b_per_p; i++) {
+  //   size_t top_block_offset = i * bbb;
+  //   size_t bottom_block_offset = top_block_offset + (b * (b - g) * (b - g));
 
-    for (size_t j = 0; j < b; j++) {
-      for (size_t ii = 0; ii < g; ii++) {
-        for (size_t jj = 0; jj < b; jj++) {
-          row_above_send[(i * side) + 
-                         (j * g * b) +
-                         (ii * g) + jj] = in[top_block_offset +
-                                            (j * b * b) + 
-                                            (ii * b) + jj];
+  //   for (size_t j = 0; j < b; j++) {
+  //     for (size_t ii = 0; ii < g; ii++) {
+  //       for (size_t jj = 0; jj < b; jj++) {
+  //         row_above_send[(i * side) + 
+  //                        (j * g * b) +
+  //                        (ii * g) + jj] = in[top_block_offset +
+  //                                           (j * b * b) + 
+  //                                           (ii * b) + jj];
 
-          row_below_send[(i * side) +
-                         (j * g * b) +
-                         (ii * g) + jj] = in[bottom_block_offset + 
-                                            (j * b * b) + 
-                                            (ii * b) + jj];
+  //         row_below_send[(i * side) +
+  //                        (j * g * b) +
+  //                        (ii * g) + jj] = in[bottom_block_offset + 
+  //                                           (j * b * b) + 
+  //                                           (ii * b) + jj];
 
-          col_left_send[(i * side) +
-                        (j * g * b) +
-                        (ii * g) + jj] = in[top_block_offset +
-                                          (j * b * b) +
-                                          (jj * b) + ii];
+  //         col_left_send[(i * side) +
+  //                       (j * g * b) +
+  //                       (ii * g) + jj] = in[top_block_offset +
+  //                                         (j * b * b) +
+  //                                         (jj * b) + ii];
 
-          col_right_send[(i * side) +
-                         (j * g * b) +
-                         (ii * g) + jj] = in[top_block_offset +
-                                            (b - g) + // offset to get right col
-                                            (j * b * b) +
-                                            (jj * b) + ii];
-        }
-      }
-    }
+  //         col_right_send[(i * side) +
+  //                        (j * g * b) +
+  //                        (ii * g) + jj] = in[top_block_offset +
+  //                                           (b - g) + // offset to get right col
+  //                                           (j * b * b) +
+  //                                           (jj * b) + ii];
+  //       }
+  //     }
+  //   }
 
-    for (size_t j = 0; j < g; j++) {
-      for (size_t ii = 0; ii < b; ii++) {
-        for (size_t jj = 0; jj < b; jj++) {
-          dep_back_send[(i * side) +
-                        (j * b * b) +
-                        (ii * b) + jj] = in[top_block_offset +
-                                            (j * b * b) +
-                                            (ii * b) + jj];
+  //   for (size_t j = 0; j < g; j++) {
+  //     for (size_t ii = 0; ii < b; ii++) {
+  //       for (size_t jj = 0; jj < b; jj++) {
+  //         dep_back_send[(i * side) +
+  //                       (j * b * b) +
+  //                       (ii * b) + jj] = in[top_block_offset +
+  //                                           (j * b * b) +
+  //                                           (ii * b) + jj];
 
-          dep_front_send[(i * side) +
-                         (j * b * b) +
-                         (ii * b) + jj] = in[top_block_offset +
-                                            (b * b * (b - g)) + // offset to get front side
-                                            (j * b * b) +
-                                            (ii * b) + jj];
-        }
-      }
-    }
-  }
+  //         dep_front_send[(i * side) +
+  //                        (j * b * b) +
+  //                        (ii * b) + jj] = in[top_block_offset +
+  //                                           (b * b * (b - g)) + // offset to get front side
+  //                                           (j * b * b) +
+  //                                           (ii * b) + jj];
+  //       }
+  //     }
+  //   }
+  // }
 
   // MPI_Barrier(MPI_COMM_WORLD);
 
@@ -365,6 +364,72 @@ int main(int argc, char *argv[]) {
   int edge000_010_id = calc_id(rid, cid, did, -1, 0, -1);
   int edge001_011_id = calc_id(rid, cid, did, -1, 0, 1);
 
+  // Pack data for edges
+  // for (size_t i = 0; i < b_per_p; i++) {
+  //   size_t top_block_offset = i * bbb;
+  //   size_t bottom_block_offset = top_block_offset + (b * (b - g) * (b - g));
+
+  //   for (size_t j = 0; j < b; j++) {
+  //     for (size_t ii = 0; ii < g; ii++) {
+  //       for (size_t jj = 0; jj < g; jj++) {
+  //         // Top left edge
+  //         edge010_011_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[top_block_offset +
+  //                                                                         (j * b * b) +
+  //                                                                         (ii * b) + jj];
+
+  //         // Top right edge
+  //         edge110_111_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[top_block_offset + (b - g) +
+  //                                                                         (j * b * b) +
+  //                                                                         (ii * b) + jj];
+
+  //         // Bottom left edge
+  //         edge000_001_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[bottom_block_offset +
+  //                                                                         (j * b * b) +
+  //                                                                         (ii * b) + jj];
+
+  //         // Bottom right edge
+  //         edge100_101_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[bottom_block_offset + (b - g) +
+  //                                                                         (j * b * b) +
+  //                                                                         (ii * b) + jj];
+
+  //         // -- TODO --> review the above and bottom_offset
+
+  //         // Top back edge
+  //         edge010_110_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[top_block_offset + 
+  //                                                                         j + (ii * b * b) + (jj * b)];
+
+  //         // Top front edge
+  //         edge011_111_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[top_block_offset + 
+  //                                                                         (b * b * (b - g)) + 
+  //                                                                         j + (ii * b * b) + (jj * b)];
+
+  //         // Bottom back edge
+  //         edge000_100_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[top_block_offset +
+  //                                                                         (b * (b - g)) +
+  //                                                                         j + (ii * b * b) + (jj * b)];
+
+  //         // Bottom front edge
+  //         //edge001_101_send[(i * edge) + (j * g * g) + (ii * g) + jj] = in[top_block_offset +
+  //                                                                         //(b * b * (b - g)) +
+  //                                                                         //j + (ii * b * b) + (jj * b)];
+  //       }
+  //     }
+  //   }
+  // }
+
+  // MPI_Barrier(MPI_COMM_WORLD);
+
+  // if (id == 0) cout<<"Side"<<endl;
+  // for (int j = 0; j < p; ++j) {
+  //   if (id == j) {
+	//     cout<<id<<": ("<<rid<<", "<<cid<<") grp: ("<<row_grp<<", "<<col_grp<<") ";
+	//     for (int i = 0; i < total_edge; ++i)
+	//         cout<<edge001_101_send[i].real()<<" ";
+	//         cout<<endl;
+  //   }
+  //   MPI_Barrier(MPI_COMM_WORLD);
+  // }
+
   // Top front right corner and bottom back left corner
   Complex *corner000_send = (Complex*) malloc(sizeof(Complex) * total_corner);
   Complex *corner000_recv = (Complex*) malloc(sizeof(Complex) * total_corner);
@@ -397,7 +462,7 @@ int main(int argc, char *argv[]) {
   int corner001_id = calc_id(rid, cid, did, -1, -1, 1);
   int corner110_id = calc_id(rid, cid, did, 1, 1, -1);
 
-  auto start = std::chrono::high_resolution_clock::now();
+  // auto start = std::chrono::high_resolution_clock::now();
 
   MPI_Sendrecv(row_above_send, total_side, MPI_C_DOUBLE_COMPLEX, row_above_id, 0,
                row_below_recv, total_side, MPI_C_DOUBLE_COMPLEX, row_below_id, MPI_ANY_TAG,
@@ -490,59 +555,35 @@ int main(int argc, char *argv[]) {
                corner001_recv, total_corner, MPI_C_DOUBLE_COMPLEX, corner001_id, MPI_ANY_TAG,
                MPI_COMM_WORLD, MPI_STATUS_IGNORE);
 
-  auto end = std::chrono::high_resolution_clock::now();
-  auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-  if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
+  // auto end = std::chrono::high_resolution_clock::now();
+  // auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+  // if (id == 0) std::cout << "Stencil time: " << duration.count() << " ns" << std::endl;
 
   // FFT
 
-  //Local transpose: 
-  // for (size_t i = 0; i < N/r/b; ++i)
-  //   for (size_t j = 0; j < N/c/b; ++j)
-  //     for (size_t k = 0; k < N/d/b; ++k)
-	//      for (size_t ii = 0; ii < b; ++ii)
-	//        for (size_t jj = 0; jj < b; ++jj)
-	//          for (size_t kk = 0; kk < b; ++kk) {
-  //           size_t src_index = (i * Ncb * Ndb * bbb) +
-  //                              (j * Ndb * bbb) +
-  //                              (k * bbb) + (ii * b * b) + (jj * b) + kk;
-  //           size_t dst_index = (i * Ncb * Ndb * bbb) +
-  //                              (k * Ndb * bbb) +
-  //                              (j * bbb) + (ii * b * b) + (jj * b) + kk;
-  //           out[dst_index] = in[src_index];
-  // }
+  // Local transpose: 
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+	     for (size_t ii = 0; ii < b; ++ii)
+	       for (size_t jj = 0; jj < b; ++jj)
+	         for (size_t kk = 0; kk < b; ++kk) {
+            size_t src_index = (i * Ncb * Ndb * bbb) +
+                               (j * Ndb * bbb) +
+                               (k * bbb) + (ii * b * b) + (jj * b) + kk;
+            size_t dst_index = (i * Ncb * Ndb * bbb) +
+                               (k * Ndb * bbb) +
+                               (j * bbb) + (ii * b * b) + (jj * b) + kk;
+            out[dst_index] = in[src_index];
+  }
 
-  // if (id == 0) cout<<"Local Transpose 1"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
-	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
-	//       cout<<out[i]<<" ";
-	//     cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    applyFFT(out + offset, N/r/b, (N/r)*b*b, 1, id, (Nrb * Ncb * bbb));
+  }
 
-  // MPI_Barrier(MPI_COMM_WORLD);
-
-  // for (size_t i = 0; i < N/d/b; i++) {
-  //   size_t offset = i * Nrb * Ncb * bbb;
-  //   // N/r/b
-  //   //applyFFT(out, 2, (Nrb * Ncb * bbb) / 2, 1, id);
-  //   applyFFT(out + offset, 2, 16, 1, id);
-  // }
-
-  // if (id == 0) cout<<"After FFT 1"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
-	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
-	//       cout<<out[i]<<" ";
-	//     cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
-
+  // Pack before All to All
+  
   // start = std::chrono::high_resolution_clock::now();
 
   // MPI_Alltoall(out,
@@ -554,64 +595,112 @@ int main(int argc, char *argv[]) {
   //              row_comm);
 
   // TODO: Change this to do packing
-  // for (size_t i = 0; i < Ndb; i++) {
-  //   size_t offset = i * Nrb * Ncb * bbb;
-  //   MPI_Alltoall(out + offset,
-  //               (N/r * N/c * N/d) / Ndb / r,
-  //               MPI_C_DOUBLE_COMPLEX,
-  //               in + offset, 
-  //               (N/r * N/c * N/d) / Ndb / r,
-  //               MPI_C_DOUBLE_COMPLEX,
-  //               row_comm);
-  // }
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    MPI_Alltoall(out + offset,
+                (N/r * N/c * N/d) / Ndb / r,
+                MPI_C_DOUBLE_COMPLEX,
+                in + offset, 
+                (N/r * N/c * N/d) / Ndb / r,
+                MPI_C_DOUBLE_COMPLEX,
+                row_comm);
+  }
 
-  // MPI_Barrier(MPI_COMM_WORLD);
-
-  // if (id == 0) cout<<"After All to all Rows"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
-	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
-	//       cout<<in[i]<<" ";
-	//     cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
-
-  // MPI_Barrier(MPI_COMM_WORLD);
+  if (id == 0) cout<<"All to all"<<endl;
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	    for (int i = 0; i < N/r * N/c * N/d; ++i)
+	      cout<<in[i].real()<<" ";
+	    cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
 
   // end = std::chrono::high_resolution_clock::now();
   // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   // if (id == 0) std::cout << "All to all rows time: " << duration.count() << " ns" << std::endl;
 
-  // Local transpose
-  // for (size_t i = 0; i < N/r/b; ++i)
-  //   for (size_t j = 0; j < N/c/b; ++j)
-  //     for (size_t k = 0; k < N/d/b; ++k)
-	//      for (size_t ii = 0; ii < b; ++ii)
-	//        for (size_t jj = 0; jj < b; ++jj)
-	//          for (size_t kk = 0; kk < b; ++kk) {
-  //           size_t src_index = (i * Ncb * Ndb * bbb) +
-  //                              (j * Ndb * bbb) +
-  //                              (k * bbb) + (ii * b * b) + (jj * b) + kk;
-  //           size_t dst_index = (i * Ncb * Ndb * bbb) +
-  //                              (k * Ndb * bbb) +
-  //                              (j * bbb) + (ii * b * b) + (jj * b) + kk;
-  //           out[dst_index] = in[src_index];
-  // }
+  //Local transpose
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+	     for (size_t ii = 0; ii < b; ++ii)
+	       for (size_t jj = 0; jj < b; ++jj)
+	         for (size_t kk = 0; kk < b; ++kk) {
+            size_t src_index = (i * Ncb * Ndb * bbb) +
+                               (j * Ndb * bbb) +
+                               (k * bbb) + (ii * b * b) + (jj * b) + kk;
+            size_t dst_index = (i * Ncb * Ndb * bbb) +
+                               (k * Ndb * bbb) +
+                               (j * bbb) + (ii * b * b) + (jj * b) + kk;
+            out[dst_index] = in[src_index];
+  }
 
-  // if (id == 0) cout<<"Local Transpose 2"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
-	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
-	//       cout<<out[i]<<" ";
-	//     cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
+  // Pack so we can apply fft
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k) {
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t j_shuffle = (j % c) * ((N/c/b)/c) + (j/c);
+              size_t i_shuffle = (i % r) * ((N/r/b)/r) + (i/r);
+              size_t k_shuffle = (k % d) * ((N/d/b)/d) + (k/d);
+              size_t gx = j_shuffle * b + jj;
+              size_t gy = i_shuffle * b + ii;
+              size_t gz = k_shuffle * b + kk;
+              size_t dst_index = gz * (N/r) * (N/c) + gy * (N/c) + gx;
+              size_t src_index = (k * Ncb * Ndb * bbb) +
+                                 (i * Ndb * bbb) +
+                                 (j * bbb) + (kk * b * b) + (ii * b) + jj;
+              in[dst_index] = out[src_index];
+           }
+      }
 
-  // MPI_Barrier(MPI_COMM_WORLD);
+  //Twiddles
+  for (size_t i = 0; i < N/d; i++) {
+    for (size_t j = 0; j < N/r; j++) {
+      for (size_t k = 0; k < N/c; k += N/c/b) {
+        for (size_t kk = 0; kk < N/c/b; kk++) {
+          double foo = (double)(cid * ((N/(b*c))/c)) + ((k + kk) / (b * c));
+          double l = (k + kk) % (b * c);;
+          size_t index = i * ((N/r) * (N/c)) + j * (N/c) + k + kk;
+          in[index] *= std::exp(Complex(0.0, -2*M_PI*foo*l/(N))); 
+        }
+      }
+    }
+  }
+
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    applyFFT(in + offset, b*c, 1, b*c, id, (Nrb * Ncb * bbb));
+  }
+
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k) {
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t j_shuffle = (j % c) * ((N/c/b)/c) + (j/c);
+              size_t i_shuffle = (i % r) * ((N/r/b)/r) + (i/r);
+              size_t k_shuffle = (k % d) * ((N/d/b)/d) + (k/d);
+              size_t gx = j_shuffle * b + jj;
+              size_t gy = i_shuffle * b + ii;
+              size_t gz = k_shuffle * b + kk;
+              size_t dst_index = gz * (N/r) * (N/c) + gy * (N/c) + gx;
+              size_t src_index = (k * Ncb * Ndb * bbb) +
+                                 (i * Ndb * bbb) +
+                                 (j * bbb) + (kk * b * b) + (ii * b) + jj;
+              out[src_index] = in[dst_index];
+           }
+      }
+
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    applyFFT(out + offset, N/r/b, (N/r)*b*b, 1, id, (Nrb * Ncb * bbb));
+  }
 
   // start = std::chrono::high_resolution_clock::now();
 
@@ -623,64 +712,234 @@ int main(int argc, char *argv[]) {
   //              MPI_C_DOUBLE_COMPLEX,
   //              col_comm);
 
-  // for (size_t i = 0; i < Ndb; i++) {
-  //   size_t offset = i * Nrb * Ncb * bbb;
-  //   MPI_Alltoall(out + offset,
-  //                (N/r * N/c * N/d) / Ndb / c,
-  //                MPI_C_DOUBLE_COMPLEX,
-  //                in + offset, 
-  //                (N/r * N/c * N/d) / Ndb / c,
-  //                MPI_C_DOUBLE_COMPLEX,
-  //                col_comm);
-  // }
-
   // MPI_Barrier(MPI_COMM_WORLD);
 
-  // if (id == 0) cout<<"After All to all Cols"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") | ";
-	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
-	//       cout<<in[i]<<" ";
-	//     cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
-
-  // MPI_Barrier(MPI_COMM_WORLD);
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    MPI_Alltoall(out + offset,
+                 (N/r * N/c * N/d) / Ndb / c,
+                 MPI_C_DOUBLE_COMPLEX,
+                 in + offset, 
+                 (N/r * N/c * N/d) / Ndb / c,
+                 MPI_C_DOUBLE_COMPLEX,
+                 col_comm);
+  }
 
   // end = std::chrono::high_resolution_clock::now();
   // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   // if (id == 0) std::cout << "All to all cols time: " << duration.count() << " ns" << std::endl;
 
-  // MPI_Barrier(MPI_COMM_WORLD);
+
+  // Transpose before packing!
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t src_index = (i * Ncb * Ndb * bbb) +
+                                 (j * Ndb * bbb) +
+                                 (k * bbb) + (ii * b * b) + (jj * b) + kk;
+              size_t dst_index = (i * Ncb * Ndb * bbb) +
+                                 (k * Ndb * bbb) +
+                                 (j * bbb) + (ii * b * b) + (kk * b) + jj;
+              out[dst_index] = in[src_index];
+           }
+  
+  // Packing
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k) {
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t j_shuffle = (j % c) * ((N/c/b)/c) + (j/c);
+              size_t i_shuffle = (i % r) * ((N/r/b)/r) + (i/r);
+              size_t k_shuffle = (k % d) * ((N/d/b)/d) + (k/d);
+              size_t gx = j_shuffle * b + jj;
+              size_t gy = i_shuffle * b + ii;
+              size_t gz = k_shuffle * b + kk;
+              size_t dst_index = gz * (N/r) * (N/c) + gy * (N/c) + gx;
+              size_t src_index = (k * Ncb * Ndb * bbb) +
+                                 (i * Ndb * bbb) +
+                                 (j * bbb) + (kk * b * b) + (ii * b) + jj;
+              in[dst_index] = out[src_index];
+           }
+      }
+
+  //Twiddles
+  for (size_t i = 0; i < N/d; i++) {
+    for (size_t j = 0; j < N/r; j++) {
+      for (size_t k = 0; k < N/c; k += N/c/b) {
+        for (size_t kk = 0; kk < N/c/b; kk++) {
+          double foo = (double)(rid * ((N/(b*c))/c)) + ((k + kk) / (b * c));
+          double l = (k + kk) % (b * c);;
+          size_t index = i * ((N/r) * (N/c)) + j * (N/c) + k + kk;
+          in[index] *= std::exp(Complex(0.0, -2*M_PI*foo*l/(N))); 
+        }
+      }
+    }
+  }
+
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    applyFFT(in + offset, b*c, 1, b*c, id, (Nrb * Ncb * bbb));
+  }
+
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k) {
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t j_shuffle = (j % c) * ((N/c/b)/c) + (j/c);
+              size_t i_shuffle = (i % r) * ((N/r/b)/r) + (i/r);
+              size_t k_shuffle = (k % d) * ((N/d/b)/d) + (k/d);
+              size_t gx = j_shuffle * b + jj;
+              size_t gy = i_shuffle * b + ii;
+              size_t gz = k_shuffle * b + kk;
+              size_t dst_index = gz * (N/r) * (N/c) + gy * (N/c) + gx;
+              size_t src_index = (k * Ncb * Ndb * bbb) +
+                                 (i * Ndb * bbb) +
+                                 (j * bbb) + (kk * b * b) + (ii * b) + jj;
+              out[src_index] = in[dst_index];
+           }
+      }
+
+  // Unpack
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t src_index = (i * Ncb * Ndb * bbb) +
+                                 (j * Ndb * bbb) +
+                                 (k * bbb) + (ii * b * b) + (jj * b) + kk;
+              size_t dst_index = (i * Ncb * Ndb * bbb) +
+                                 (k * Ndb * bbb) +
+                                 (j * bbb) + (ii * b * b) + (kk * b) + jj;
+              in[src_index] = out[dst_index];
+           }
+
+  //applyFFT(in, 2, ((N/r) * (N/c) * (N/d)) / 2, 1, id, ((N/r) * (N/c) * (N/d)));
+  applyFFT(in, Ndb, ((N/r) * (N/c) * (N/d)) / Ndb, 1, id, ((N/r) * (N/c) * (N/d)));
 
   // start = std::chrono::high_resolution_clock::now();
 
-  // MPI_Alltoall(in,
-  //              (N/r * N/c * N/d) / d,
-  //              MPI_C_DOUBLE_COMPLEX,
-  //              out, 
-  //              (N/r * N/c * N/d) / d,
-  //              MPI_C_DOUBLE_COMPLEX,
-  //              dep_comm);
+  MPI_Alltoall(in,
+               (N/r * N/c * N/d) / d,
+               MPI_C_DOUBLE_COMPLEX,
+               out, 
+               (N/r * N/c * N/d) / d,
+               MPI_C_DOUBLE_COMPLEX,
+               dep_comm);
 
   // end = std::chrono::high_resolution_clock::now();
   // duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
   // if (id == 0) std::cout << "All to all depth time: " << duration.count() << " ns" << std::endl;
 
-  // MPI_Barrier(MPI_COMM_WORLD);
+  // Transpose before packing
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t src_index = (i * Ncb * Ndb * bbb) +
+                                 (j * Ndb * bbb) +
+                                 (k * bbb) + (ii * b * b) + (jj * b) + kk;
+              size_t dst_index = (k * Ncb * Ndb * bbb) +
+                                 (j * Ndb * bbb) +
+                                 (i * bbb) + (kk * b * b) + (jj * b) + ii;
+              in[dst_index] = out[src_index];
+           }
 
-  // if (id == 0) cout<<"After All to all in dep"<<endl;
-  // for (int j = 0; j < p; ++j) {
-  //   if (id == j) {
-	//     cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
-	//     for (int i = 0; i < N/r * N/c * N/d; ++i)
-	//       cout<<out[i]<<" ";
-	//     cout<<endl;
-  //   }
-  //   MPI_Barrier(MPI_COMM_WORLD);
-  // }
+  // Packing
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k) {
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t j_shuffle = (j % c) * ((N/c/b)/c) + (j/c);
+              size_t i_shuffle = (i % r) * ((N/r/b)/r) + (i/r);
+              size_t k_shuffle = (k % d) * ((N/d/b)/d) + (k/d);
+              size_t gx = j_shuffle * b + jj;
+              size_t gy = i_shuffle * b + ii;
+              size_t gz = k_shuffle * b + kk;
+              size_t dst_index = gz * (N/r) * (N/c) + gy * (N/c) + gx;
+              size_t src_index = (k * Ncb * Ndb * bbb) +
+                                 (i * Ndb * bbb) +
+                                 (j * bbb) + (kk * b * b) + (ii * b) + jj;
+              out[dst_index] = in[src_index];
+           }
+      }
+
+  //Twiddles
+  for (size_t i = 0; i < N/d; i++) {
+    for (size_t j = 0; j < N/r; j++) {
+      for (size_t k = 0; k < N/c; k += N/c/b) {
+        for (size_t kk = 0; kk < N/c/b; kk++) {
+          double foo = (double)(did * ((N/(b*c))/c)) + ((k + kk) / (b * c));
+          double l = (k + kk) % (b * c);;
+          size_t index = i * ((N/r) * (N/c)) + j * (N/c) + k + kk;
+          out[index] *= std::exp(Complex(0.0, -2*M_PI*foo*l/(N))); 
+        }
+      }
+    }
+  }
+
+  for (size_t i = 0; i < Ndb; i++) {
+    size_t offset = i * Nrb * Ncb * bbb;
+    applyFFT(out + offset, b*c, 1, b*c, id, (Nrb * Ncb * bbb));
+  }
+
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k) {
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t j_shuffle = (j % c) * ((N/c/b)/c) + (j/c);
+              size_t i_shuffle = (i % r) * ((N/r/b)/r) + (i/r);
+              size_t k_shuffle = (k % d) * ((N/d/b)/d) + (k/d);
+              size_t gx = j_shuffle * b + jj;
+              size_t gy = i_shuffle * b + ii;
+              size_t gz = k_shuffle * b + kk;
+              size_t dst_index = gz * (N/r) * (N/c) + gy * (N/c) + gx;
+              size_t src_index = (k * Ncb * Ndb * bbb) +
+                                 (i * Ndb * bbb) +
+                                 (j * bbb) + (kk * b * b) + (ii * b) + jj;
+              in[src_index] = out[dst_index];
+           }
+      }
+
+  for (size_t i = 0; i < N/r/b; ++i)
+    for (size_t j = 0; j < N/c/b; ++j)
+      for (size_t k = 0; k < N/d/b; ++k)
+        for (size_t ii = 0; ii < b; ++ii)
+	        for (size_t jj = 0; jj < b; ++jj)
+	          for (size_t kk = 0; kk < b; ++kk) {
+              size_t src_index = (i * Ncb * Ndb * bbb) +
+                                 (j * Ndb * bbb) +
+                                 (k * bbb) + (ii * b * b) + (jj * b) + kk;
+              size_t dst_index = (i * Ncb * Ndb * bbb) +
+                                 (k * Ndb * bbb) +
+                                 (j * bbb) + (ii * b * b) + (kk * b) + jj;
+              out[src_index] = in[dst_index];
+           }
+
+  if (id == 0) cout<<"The End"<<endl;
+  for (int j = 0; j < p; ++j) {
+    if (id == j) {
+	    cout<<id<<": ("<<rid<<", "<<cid<<", "<<did<<") grp: ("<<row_grp<<", "<<col_grp<<", "<<dep_grp<<") ";
+	    for (int i = 0; i < N/r * N/c * N/d; ++i)
+	      cout<<out[i].real()<<" ";
+	    cout<<endl;
+    }
+    MPI_Barrier(MPI_COMM_WORLD);
+  }
   
   // Clean up
   free(in);
