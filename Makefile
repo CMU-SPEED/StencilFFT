@@ -6,6 +6,8 @@ FLAGS= -O3 -fopenmp
 LIB = -L$(LIB_PATH)/lib -lfftw3_omp -lfftw3
 INCLUDE = -I$(LIB_PATH)/include
 
+CUDA_HOME=/usr/local/cuda
+
 .PHONY: zmodel
 
 3D:
@@ -22,6 +24,12 @@ zmodel:
 	mpicxx $(FLAGS) $(INCLUDE) zmodel/zmodel.cpp -o zmodel.x $(LIB)
 	mpiexec -n 4 ./zmodel.x 16 2
 #mpiexec -n 4 ./zmodel.x 64 4
+
+zmodel_fft_gpu:
+#nvcc zmodel/zmodel_fft.cu -o zmodel_fft.x
+#./zmodel_fft.x
+	nvcc -ccbin=mpicxx -I$(CUDA_HOME)/include zmodel/zmodel_fft.cu -o zmodel_fft.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
+	mpiexec -n 4 ./zmodel_fft.x
 
 laplace:
 	nvcc zmodel/laplace.cu -o laplace.x
