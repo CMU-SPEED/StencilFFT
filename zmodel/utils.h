@@ -9,6 +9,7 @@
 #define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 // #define __PRINT__SANITY__
+#define __ZMODEL__COMPUTE__
 
 // FIXME: need to revist the use of macros --> we want to be able to pass things in on commandline
 #define N_DIM (64)
@@ -27,10 +28,9 @@
 
 using Complex = DEVICE_FFT_DOUBLECOMPLEX;
 
-// FIXME: this need to be revisted --> I think cid and rid may be swapped
 void init_host(int rid, int cid, Complex *host_in) {
-    int row_offset = rid * B_DIM;           // offset based on which processor in the row
-    int col_offset = cid * (N_DIM*B_DIM);   // offset based on which processor in the col
+    int row_offset = cid * B_DIM;           // offset based on which processor in the row
+    int col_offset = rid * (N_DIM*B_DIM);   // offset based on which processor in the col
     int offset = row_offset + col_offset;
 
     Complex *init = (Complex*)malloc(LOCAL_BYTES);
@@ -59,7 +59,32 @@ void init_host(int rid, int cid, Complex *host_in) {
     free(init);
 }
 
-void init_forward_plans(cufftHandle *plan0, cufftHandle *plan1, cufftHandle *plan2, cufftHandle *plan3) {
+
+void print_block_cyclic(Complex *host_in) {
+    Complex *init = (Complex*)malloc(LOCAL_BYTES);
+
+    for (int i = 0; i < LOCAL_DIM; i++) {
+        for (int j = 0; j < B_DIM; j++) {
+            for (int jj = 0; jj < LOCAL_DIM/B_DIM; jj++) {
+                int row = i * LOCAL_DIM;
+                init[row + j + (jj * B_DIM)] = host_in[row + (j * (LOCAL_DIM/B_DIM))+ jj];
+            }
+        }
+    }
+
+    std::cout << "Block Cyclic" << std::endl;
+    for (int i = 0; i < LOCAL_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            std::cout << init[i * LOCAL_DIM + j].x << " ";
+        }
+        std::cout << std::endl;
+    }
+
+    free(init);
+}
+
+
+void init_plans(cufftHandle *plan0, cufftHandle *plan1, cufftHandle *plan2, cufftHandle *plan3) {
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(plan0));
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(plan1));
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(plan2));
