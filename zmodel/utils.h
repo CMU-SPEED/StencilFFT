@@ -75,7 +75,7 @@ void print_block_cyclic(Complex *host_in) {
     std::cout << "Block Cyclic" << std::endl;
     for (int i = 0; i < LOCAL_DIM; i++) {
         for (int j = 0; j < LOCAL_DIM; j++) {
-            std::cout << init[i * LOCAL_DIM + j].x << " ";
+            std::cout << "(" << init[i * LOCAL_DIM + j].x << "," << init[i * LOCAL_DIM + j].y << ") ";
         }
         std::cout << std::endl;
     }

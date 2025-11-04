@@ -48,12 +48,12 @@ __global__ void pack_forward_fft0(Complex *device_in, Complex *device_out, Compl
     const int col = (row_split * split_size) + index_in_vec_split;
 
     // #if defined(__PRINT__TWIDDLES__) || !defined(__ZMODEL__COMPUTE___)
-    device_out[row * LOCAL_DIM + col] = device_in[blockIdx.x * LOCAL_DIM + threadIdx.x];
+    // device_out[row * LOCAL_DIM + col] = device_in[blockIdx.x * LOCAL_DIM + threadIdx.x];
     // #else
     // FIXME: not sure if I should use index from input or output?
     // FIMXE: I think this should use the output index
-    // device_out[row * LOCAL_DIM + col] = DEVICE_FFT_DOUBLECOMPLEX_MUL(device_in[blockIdx.x * LOCAL_DIM + threadIdx.x],
-                                                                    //  forward_twiddles0[row * LOCAL_DIM + col]);            
+    device_out[row * LOCAL_DIM + col] = DEVICE_FFT_DOUBLECOMPLEX_MUL(device_in[blockIdx.x * LOCAL_DIM + threadIdx.x],
+                                                                     forward_twiddles0[row * LOCAL_DIM + col]);
     // #endif
 }
 
@@ -69,11 +69,11 @@ __global__ void pack_forward_fft1(Complex *device_in, Complex *device_out, Compl
     const int row = (which_block * P_DIM * B_DIM) + (which_split * B_DIM) + index_in_block;
 
     // #if defined(__PRINT__TWIDDLES__) || !defined(__ZMODEL__COMPUTE___)
-    device_out[row * LOCAL_DIM + threadIdx.x] = device_in[blockIdx.x * LOCAL_DIM + threadIdx.x];
+    // device_out[row * LOCAL_DIM + threadIdx.x] = device_in[blockIdx.x * LOCAL_DIM + threadIdx.x];
     // #else
     // FIXME: I think this is the right way to apply it --> same index in input and twiddles?
-    // device_out[row * LOCAL_DIM + threadIdx.x] = DEVICE_FFT_DOUBLECOMPLEX_MUL(device_in[blockIdx.x * LOCAL_DIM + threadIdx.x],
-                                                                            //  forward_twiddles1[blockIdx.x * LOCAL_DIM + threadIdx.x]);
+    device_out[row * LOCAL_DIM + threadIdx.x] = DEVICE_FFT_DOUBLECOMPLEX_MUL(device_in[blockIdx.x * LOCAL_DIM + threadIdx.x],
+                                                                            forward_twiddles1[row * LOCAL_DIM + threadIdx.x]);
     // #endif
 }
 
@@ -91,7 +91,7 @@ void init_forward_twiddles0(Complex *in, int cid) {
                 #if defined(__PRINT__TWIDDLES__)
                 in[(local_row * LOCAL_DIM) + fft_row + (fft_col * B_DIM)] = {k, l};
                 #else
-                std::complex<double> twiddle = std::exp(std::complex<double>(0.0, 2*M_PI*k*l/LOCAL_DIM));
+                std::complex<double> twiddle = std::exp(std::complex<double>(0.0, -2*M_PI*k*l/N_DIM));
                 in[(local_row * LOCAL_DIM) + fft_row + (fft_col * B_DIM)] = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(twiddle.real(), twiddle.imag());
                 #endif
             }
@@ -99,7 +99,6 @@ void init_forward_twiddles0(Complex *in, int cid) {
     }
 }
 
-// FIXME: Does the forward FFT twiddle not have a negative sign?
 void init_forward_twiddles1(Complex *in, int rid) {
     for (int fft_row = 0; fft_row < (LOCAL_DIM*LOCAL_DIM) / (LOCAL_DIM*B_DIM*P_DIM); fft_row++) {
         for (int fft_col = 0; fft_col < B_DIM*P_DIM; fft_col++) {
@@ -110,12 +109,17 @@ void init_forward_twiddles1(Complex *in, int rid) {
                 #if defined(__PRINT__TWIDDLES__)
                 in[fft_row * (LOCAL_DIM*B_DIM*P_DIM) + fft_col * LOCAL_DIM + local_col] = {k, l};
                 #else
-                std::complex<double> twiddle = std::exp(std::complex<double>(0.0, 2*M_PI*k*l/LOCAL_DIM));
+                std::complex<double> twiddle = std::exp(std::complex<double>(0.0, -2*M_PI*k*l/N_DIM));
                 in[fft_row * (LOCAL_DIM*B_DIM*P_DIM) + fft_col * LOCAL_DIM + local_col] = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(twiddle.real(), twiddle.imag());
                 #endif
             }
         }
     }
+}
+
+// NOTE: This is used for debugging --> can comment out FFTs and replace with this
+__global__ void placeholder(Complex *device_in, Complex *device_out) {
+    device_out[blockIdx.x * LOCAL_DIM + threadIdx.x] = device_in[blockIdx.x * LOCAL_DIM + threadIdx.x];
 }
 
 /**
@@ -137,6 +141,8 @@ void forward_fft(Complex *host_buf0, Complex *host_buf1, Complex *device_buf0, C
     #endif
 
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan0, device_buf0, device_buf1, DEVICE_FFT_FORWARD));
+    // placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     pack_forward_all_to_all_row<<<VEC_TOTAL, VEC>>>(device_buf1, device_buf0);
     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
@@ -152,18 +158,22 @@ void forward_fft(Complex *host_buf0, Complex *host_buf1, Complex *device_buf0, C
                 *row_comm);
 
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf0, host_buf0, LOCAL_BYTES, MEM_COPY_HOST_TO_DEVICE));
-
+    
     pack_forward_fft0<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1, device_twiddles0);
     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     // FIXME: can we parallelize this with streams --> benchmark to see if this is a bottleneck first
     for (int row = 0; row < LOCAL_DIM; row++) {
         Complex* row_ptr0 = device_buf1 + row * LOCAL_DIM;
-        Complex* row_ptr1 = device_buf0+ row * LOCAL_DIM;
+        Complex* row_ptr1 = device_buf0 + row * LOCAL_DIM;
         DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan1, row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
     }
+    // placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan2, device_buf0, device_buf1, DEVICE_FFT_FORWARD));
+    // placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(host_buf1, device_buf1, LOCAL_BYTES, MEM_COPY_DEVICE_TO_HOST));
 
@@ -185,6 +195,8 @@ void forward_fft(Complex *host_buf0, Complex *host_buf1, Complex *device_buf0, C
         Complex* row_ptr1 = device_buf0 + row * LOCAL_DIM * P_DIM * B_DIM;
         DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan3, row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
     }
+    // placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     #ifdef __PRINT__TIMING__
     MPI_Barrier(MPI_COMM_WORLD);
@@ -382,7 +394,7 @@ int main(void) {
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf0, host_buf0, LOCAL_BYTES, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf1, host_buf1, LOCAL_BYTES, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_twiddles0, host_twiddles0, LOCAL_BYTES, MEM_COPY_HOST_TO_DEVICE));
-    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_twiddles1, host_twiddles0, LOCAL_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_twiddles1, host_twiddles1, LOCAL_BYTES, MEM_COPY_HOST_TO_DEVICE));
 
     forward_fft(host_buf0, host_buf1, device_buf0, device_buf1,
                  device_twiddles0, device_twiddles1, 
