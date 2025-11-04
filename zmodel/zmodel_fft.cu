@@ -3,10 +3,8 @@
 #include <chrono>
 #include <complex>
 
-// FIXME: TWIDDLES --> check scaling
 // FIXME: Inverse FFT
 // Header file + finish cleanup
-// FIXME: init_host fix rid and cid swap
 // FIXME: NULL pointer checks for inputs
 // FIXME: Check pointer function declaration convention
 
@@ -47,6 +45,8 @@ __global__ void pack_forward_fft0(Complex *device_in, Complex *device_out, Compl
     const int row = vec_split + (index_in_row_split * P_DIM);
     const int col = (row_split * split_size) + index_in_vec_split;
 
+    // FIXME: THIS if statement breaks things
+
     // #if defined(__PRINT__TWIDDLES__) || !defined(__ZMODEL__COMPUTE___)
     // device_out[row * LOCAL_DIM + col] = device_in[blockIdx.x * LOCAL_DIM + threadIdx.x];
     // #else
@@ -77,22 +77,19 @@ __global__ void pack_forward_fft1(Complex *device_in, Complex *device_out, Compl
     // #endif
 }
 
-// FIXME: apply the twiddles in the packing routines
-// FIXME: use PRINT_TWIDDLES in twiddles init
-// FIXME" use APPLY_TWIDDLES MACRO
-
 void init_forward_twiddles0(Complex *in, int cid) {
+    int stride = VEC/P_DIM; // This is the processor offset
     for (int local_row = 0; local_row < LOCAL_DIM; local_row++) {
-        for (int fft_row = 0; fft_row < B_DIM; fft_row++) {
-            for (int fft_col = 0; fft_col < LOCAL_DIM/B_DIM; fft_col++) {
-                int fft_row_offset = cid * B_DIM;                           // FIXME: is b the correct offet here?
+        for (int fft_row = 0; fft_row < stride; fft_row++) {
+            for (int fft_col = 0; fft_col < LOCAL_DIM/stride; fft_col++) {
+                int fft_row_offset = cid * stride;
                 double k = (double)(fft_row + fft_row_offset);
                 double l = (double)fft_col;
                 #if defined(__PRINT__TWIDDLES__)
-                in[(local_row * LOCAL_DIM) + fft_row + (fft_col * B_DIM)] = {k, l};
+                in[(local_row * LOCAL_DIM) + fft_row + (fft_col * stride)] = {k, l};
                 #else
                 std::complex<double> twiddle = std::exp(std::complex<double>(0.0, -2*M_PI*k*l/N_DIM));
-                in[(local_row * LOCAL_DIM) + fft_row + (fft_col * B_DIM)] = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(twiddle.real(), twiddle.imag());
+                in[(local_row * LOCAL_DIM) + fft_row + (fft_col * stride)] = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(twiddle.real(), twiddle.imag());
                 #endif
             }
         }
@@ -100,10 +97,11 @@ void init_forward_twiddles0(Complex *in, int cid) {
 }
 
 void init_forward_twiddles1(Complex *in, int rid) {
+    int stride = (N_DIM/(B_DIM*P_DIM))/P_DIM; // This is the processor offset
     for (int fft_row = 0; fft_row < (LOCAL_DIM*LOCAL_DIM) / (LOCAL_DIM*B_DIM*P_DIM); fft_row++) {
         for (int fft_col = 0; fft_col < B_DIM*P_DIM; fft_col++) {
             for (int local_col = 0; local_col < LOCAL_DIM; local_col++) {
-                int fft_row_offset = rid * B_DIM;                       // FIXME: i dont think this is correct
+                int fft_row_offset = rid * stride;
                 double k = (double)(fft_row + fft_row_offset);
                 double l = (double)fft_col;
                 #if defined(__PRINT__TWIDDLES__)
@@ -419,10 +417,10 @@ int main(void) {
     }
     #endif
 
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (id == 0) {
-        print_block_cyclic(host_buf1);
-    }
+    // MPI_Barrier(MPI_COMM_WORLD);
+    // if (id == 0) {
+        // print_block_cyclic(host_buf1);
+    // }
 
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_DESTROY(plan0));
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_DESTROY(plan1));

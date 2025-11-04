@@ -11,7 +11,7 @@
 // #define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__
 
-// FIXME: need to revist the use of macros --> we want to be able to pass things in on commandline
+// NOTE: these macros can be set on the commandline
 #define N_DIM (64)
 #define B_DIM (4)
 #define P_DIM (2) // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
@@ -59,7 +59,6 @@ void init_host(int rid, int cid, Complex *host_in) {
     free(init);
 }
 
-
 void print_block_cyclic(Complex *host_in) {
     Complex *init = (Complex*)malloc(LOCAL_BYTES);
 
@@ -82,7 +81,6 @@ void print_block_cyclic(Complex *host_in) {
 
     free(init);
 }
-
 
 void init_plans(cufftHandle *plan0, cufftHandle *plan1, cufftHandle *plan2, cufftHandle *plan3) {
     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(plan0));
