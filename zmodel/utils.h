@@ -6,9 +6,9 @@
 #include "device_macros.h"
 
 #define __PRINT__TIMING__
-#define __PRINT__RESULTS__
+// #define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
-// #define __PRINT__SANITY__
+#define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__
 
 // NOTE: these macros can be set on the commandline

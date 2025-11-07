@@ -398,9 +398,9 @@ int main(void) {
                  device_twiddles0, device_twiddles1, 
                  &row_comm, &col_comm, &plan0, &plan1, &plan2, &plan3);
 
-    inverse_fft(host_buf0, host_buf1, device_buf0, device_buf1,
-                 NULL, NULL, 
-                 &row_comm, &col_comm, NULL, NULL, NULL, NULL);
+    // inverse_fft(host_buf0, host_buf1, device_buf0, device_buf1,
+    //              NULL, NULL, 
+    //              &row_comm, &col_comm, NULL, NULL, NULL, NULL);
 
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(host_buf1, device_buf0, LOCAL_BYTES, MEM_COPY_DEVICE_TO_HOST));
 
