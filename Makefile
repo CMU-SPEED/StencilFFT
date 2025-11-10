@@ -29,7 +29,7 @@ zmodel_fft_gpu:
 #nvcc zmodel/zmodel_fft.cu -o zmodel_fft.x
 #./zmodel_fft.x
 	nvcc -ccbin=mpicxx -I$(CUDA_HOME)/include zmodel/zmodel_fft.cu -o zmodel_fft.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
-	mpiexec -n 16 ./zmodel_fft.x
+	mpiexec -n 4 ./zmodel_fft.x
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 4 ./zmodel_fft.x
 
 laplace:

@@ -6,11 +6,12 @@
 #include "device_macros.h"
 
 #define __PRINT__TIMING__
-// #define __PRINT__RESULTS__
+#define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__
-#define __GPU__AWARE__MPI__
+// #define __GPU__AWARE__MPI__
+#define RUNS 1
 
 // NOTE: these macros can be set on the commandline
 #ifndef N_DIM
@@ -20,7 +21,7 @@
     #define B_DIM (4)
 #endif
 #ifndef P_DIM
-    #define P_DIM (4) // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
+    #define P_DIM (2) // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
 #endif
 #define LOCAL_DIM (N_DIM/P_DIM)
 #define LOCAL_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
@@ -160,4 +161,4 @@ void init_plans(cufftHandle *plan0, cufftHandle *plan1, cufftHandle *plan2, cuff
       DEVICE_FFT_Z2Z, batch3, &workSize3));
 }
 
-#endif
+#endif // __ZMODEL__UTILS__
