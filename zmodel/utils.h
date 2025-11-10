@@ -10,11 +10,18 @@
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__
+#define __GPU__AWARE__MPI__
 
 // NOTE: these macros can be set on the commandline
-#define N_DIM (64)
-#define B_DIM (4)
-#define P_DIM (2) // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
+#ifndef N_DIM
+    #define N_DIM (64)
+#endif
+#ifndef B_DIM
+    #define B_DIM (4)
+#endif
+#ifndef P_DIM
+    #define P_DIM (4) // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
+#endif
 #define LOCAL_DIM (N_DIM/P_DIM)
 #define LOCAL_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
 
