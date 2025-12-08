@@ -8,6 +8,9 @@ INCLUDE = -I$(LIB_PATH)/include
 
 CUDA_HOME=/usr/local/cuda
 
+ZMODEL_FILES = zmodel/main.cu zmodel/transforms/fft.cu zmodel/transforms/riesz.cu
+#zmodel/stencils/laplace.cu
+
 .PHONY: zmodel
 
 3D:
@@ -21,28 +24,26 @@ CUDA_HOME=/usr/local/cuda
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 4 ./stencil2D.x 1024 256
 
 zmodel:
-	mpicxx $(FLAGS) $(INCLUDE) zmodel/zmodel.cpp -o zmodel.x $(LIB)
-	mpiexec -n 4 ./zmodel.x 16 2
+	nvcc -ccbin=mpicxx -std=c++17 -I$(CUDA_HOME)/include $(ZMODEL_FILES) -o zmodel.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
+	mpiexec -n 4 ./zmodel.x
 #mpiexec -n 4 ./zmodel.x 64 4
 
-zmodel_fft_gpu:
-#nvcc zmodel/zmodel_fft.cu -o zmodel_fft.x
-#./zmodel_fft.x
-	nvcc -ccbin=mpicxx -I$(CUDA_HOME)/include zmodel/zmodel_fft.cu -o zmodel_fft.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
-	mpiexec -n 4 ./zmodel_fft.x
+# zmodel_fft_gpu:
+# 	nvcc -ccbin=mpicxx -I$(CUDA_HOME)/include zmodel/zmodel_fft.cu -o zmodel_fft.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
+# 	mpiexec -n 4 ./zmodel_fft.x
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 4 ./zmodel_fft.x
 
-laplace:
-	nvcc zmodel/laplace.cu -o laplace.x
-	./laplace.x
+# laplace:
+# 	nvcc zmodel/laplace.cu -o laplace.x
+# 	./laplace.x
 
-dx:
-	nvcc zmodel/dx.cu -o dx.x
-	./dx.x
+# dx:
+# 	nvcc zmodel/dx.cu -o dx.x
+# 	./dx.x
 
-dy:
-	nvcc zmodel/dy.cu -o dy.x
-	./dy.x
+# dy:
+# 	nvcc zmodel/dy.cu -o dy.x
+# 	./dy.x
 
 measure_cuda:
 	nvcc -ccbin=mpicxx measure/measure.cu -o measure_cuda.x

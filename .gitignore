@@ -3,3 +3,7 @@
 *.py
 *.txt
 !zmodel.py
+!heffte*.txt
+!fft*.txt
+!new_plot.py
+!test_a2a.txt

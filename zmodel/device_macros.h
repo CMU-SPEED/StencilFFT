@@ -107,6 +107,11 @@
 #define DEVICE_FFT_SUCCESS CUFFT_SUCCESS
 #define DEVICE_FFT_FORWARD CUFFT_FORWARD
 #define DEVICE_FFT_INVERSE CUFFT_INVERSE
+#define DEVICE_STREAM_CREATE cudaStreamCreate
+#define DEVICE_FFT_STREAM_SET cufftSetStream
+#define DEVICE_STREAM_DESTROY cudaStreamDestroy
+#define DEVICE_COUNT cudaGetDeviceCount
+#define DEVICE_ENABLE_PA cudaDeviceEnablePeerAccess
 
 #define DEVICE_RT_SAFE_CALL(x) do {                                    \
   cudaError_t err = (x);                                               \
