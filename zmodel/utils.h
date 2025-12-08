@@ -8,7 +8,7 @@
 
 #define __PRINT__TIMING__
 #define __PRINT__DETAILED__TIMMING__
-#define __PRINT__RESULTS__
+// #define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__

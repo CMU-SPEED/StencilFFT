@@ -432,7 +432,7 @@ void forward_fft(Complex *host_buf0, Complex *host_buf1, Complex *device_buf0, C
         long long ns = duration.count();
         long long max_time = 0;
         MPI_Reduce(&ns, &max_time, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
-        if (id == 0) std::cout << "TOTAL " << max_time << " ns" << std::endl;
+        if (id == 0) std::cout << "TOTAL " << max_time << " ns\n" << std::endl;
     #endif // __PRINT__TIMING__
 }
 
@@ -764,10 +764,11 @@ void test_fft() {
         constexpr bool do_compute = false;
     #endif
 
-    for (int i = 0; i < RUNS; i++) {
+    for (int i = 0; i < 5; i++) {
         forward_fft<do_compute>(host_buf0, host_buf1, device_buf0, device_buf1,
                                 device_forward_twiddles0, device_forward_twiddles1, 
                                 &row_comm, &col_comm, &plan0, plan1, &plan2, plan3, id, streams);
+        MPI_Barrier(MPI_COMM_WORLD);
     }
 
     // // for (int i = 0; i < RUNS; i++) {
