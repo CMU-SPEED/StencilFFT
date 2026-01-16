@@ -7,7 +7,7 @@
 #include <vector>
 
 #define __PRINT__TIMING__
-#define __PRINT__DETAILED__TIMMING__
+#define __PRINT__DETAILED__TIMING__ // FIXME: spelling
 // #define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
@@ -83,7 +83,7 @@ static inline void init_host(int rid, int cid, Complex *host_in) {
     free(init);
 }
 
-// FIXME: USE TEMPLATE TO COMBINE THIS WITH THE COMPLEX VERSION
+// FIXME: combine this with the complex version
 static inline void init_host_scalar(int rid, int cid, Scalar *host_in) {
     int row_offset = cid * B_DIM;           // offset based on which processor in the row
     int col_offset = rid * (N_DIM*B_DIM);   // offset based on which processor in the col
