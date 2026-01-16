@@ -1,10 +1,12 @@
-#include "./transforms/fft.h"
+// #include "./transforms/fft.h"
 // #include "./transforms/riesz.h"
 // #include "./stencils/laplace.h"
+#include "./stencils/dy.h"
 
 int main(void) {
-    test_fft();
+    // test_fft();
     // test_riesz();
     // test_laplace();
-    return 0;    
+    test_dy();
+    return 0;
 }

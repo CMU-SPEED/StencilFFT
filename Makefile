@@ -8,8 +8,8 @@ INCLUDE = -I$(LIB_PATH)/include
 
 CUDA_HOME=/usr/local/cuda
 
-ZMODEL_FILES = zmodel/main.cu zmodel/transforms/fft.cu zmodel/transforms/riesz.cu
-#zmodel/stencils/laplace.cu
+ZMODEL_FILES = zmodel/main.cu zmodel/transforms/fft.cu zmodel/transforms/riesz.cu \
+zmodel/stencils/dy.cu
 
 .PHONY: zmodel
 
@@ -25,8 +25,8 @@ ZMODEL_FILES = zmodel/main.cu zmodel/transforms/fft.cu zmodel/transforms/riesz.c
 
 zmodel:
 	nvcc -ccbin=mpicxx -std=c++17 -I$(CUDA_HOME)/include $(ZMODEL_FILES) -o zmodel.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
-	mpiexec -n 4 ./zmodel.x
-#mpiexec -n 4 ./zmodel.x 64 4
+	mpiexec -n 1 ./zmodel.x
+#mpiexec -n 4 ./zmodel.x
 
 # zmodel_fft_gpu:
 # 	nvcc -ccbin=mpicxx -I$(CUDA_HOME)/include zmodel/zmodel_fft.cu -o zmodel_fft.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart

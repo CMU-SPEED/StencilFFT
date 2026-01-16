@@ -1,243 +1,274 @@
+#include "dy.h"
 #include <iostream>
 #include <assert.h>
-
-// int N = 16;
-#define N (64)
-// int b = 2;
-#define b (4)
-// int p = 2; // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
-#define p (2)
-// int local = N/p;
-#define local (N/p)
-
-// This is the size of the vector the stencil will be batched with
-// int vec = local/b;
-#define vec (local/b)
-// The total number of vectors on the local processor
-// int vec_total = local/vec;
-#define vec_total ((local*local)/vec)
-// The number of vectors in a row / col respectively 
-#define vec_row (local)
-#define vec_col (b)
-
-typedef struct interleaved {
-    float x;
-    float y;
-} interleaved_t;
+#include "../utils.h"
 
 /**
  * Compute the 4th order finite difference in the y dimension
  */
-__global__ void dy(interleaved_t *device_in, interleaved_t *device_out, float delta,
-                   interleaved_t *device_packed_above0, interleaved_t *device_packed_above1,
-                   interleaved_t *device_packed_below0, interleaved_t *device_packed_below1) {
-    int row = blockIdx.x / vec_col;
-    int col = blockIdx.x % vec_col;
-    int my_offset = (row * local) + (col * vec);
+__global__ void dy(Scalar *device_in, Scalar *device_out, 
+                   int rid, int cid, Scalar delta,
+                   Scalar *device_packed_above0, Scalar *device_packed_above1,
+                   Scalar *device_packed_below0, Scalar *device_packed_below1) {
+    int row = blockIdx.x / VEC_COL;
+    int col = blockIdx.x % VEC_COL;
+    int col_offset = (col * VEC) + threadIdx.x;
+    int my_offset = (row * LOCAL_DIM) + col_offset;
 
-    int vec_index = threadIdx.x;
+    Scalar scratch = 0.0;
 
-    interleaved_t scratch = {0.0, 0.0};
+    bool top0_of_block = ((row % B_DIM) == 0);
+    bool top1_of_block = ((row % B_DIM) == 1);
+    bool bottom0_of_block = ((row % B_DIM) == B_DIM - 1);
+    bool bottom1_of_block = ((row % B_DIM) == B_DIM - 2);
 
-    // Get row directly above
-    if (0 < (row % b)) {
-        int above_offset = ((row - 1) * local) + (col * vec);
-        scratch.x += (device_in[above_offset + vec_index].x * -8);
-    } else {
-        if (row == 0) {
-            int above_offset = ((local/b - 1)*local) + (col * vec);
-            scratch.x += (device_packed_above0[above_offset + vec_index].x * -8);
+    bool top0_row = (row == 0);
+    bool top1_row = (row == 1);
+    bool bottom0_row = (row == LOCAL_DIM - 1);
+    bool bottom1_row = (row == LOCAL_DIM - 2);
+
+    bool top_p = (rid == 0);
+    bool bottom_p = (rid == P_DIM - 1);
+
+    int one_above_offset;
+    if (top0_of_block) {
+        if (top_p) {
+            one_above_offset = top0_row ? ((LOCAL_DIM/B_DIM - 1)*LOCAL_DIM) : ((row/B_DIM - 1)*LOCAL_DIM);
         } else {
-            int above_offset = ((row/b - 1)*local) + (col * vec);
-            scratch.x += (device_packed_above0[above_offset + vec_index].x * -8);
+            one_above_offset = ((row/B_DIM)*LOCAL_DIM);
         }
+        scratch += (device_packed_above0[one_above_offset + col_offset] * -8);
+    } else {
+        one_above_offset = ((row - 1) * LOCAL_DIM);
+        scratch += (device_in[one_above_offset + col_offset] * -8);
     }
 
-    // Get row two steps above
-    if (1 < (row % b)) {
-        int above_offset = ((row - 2) * local) + (col * vec);
-        scratch.x += device_in[above_offset + vec_index].x;
-    } else {
-        if (row == 0) {
-            int above_offset = ((local/b - 1)*local) + (col * vec);
-            scratch.x += device_packed_above1[above_offset + vec_index].x;
-        } else if (row == 1) {
-            int above_offset = ((local/b - 1)*local) + (col * vec);
-            scratch.x += device_packed_above0[above_offset + vec_index].x;
-        } else if ((row % b) == 0) {
-            int above_offset = ((row/b - 1)*local) + (col * vec);
-            scratch.x += device_packed_above1[above_offset + vec_index].x;
-        } else if ((row % b) == 1) {
-            int above_offset = ((row/b - 1)*local) + (col * vec);
-            scratch.x += device_packed_above0[above_offset + vec_index].x;
+    int two_above_offset;
+    if (top0_of_block) {
+        if (top_p) {
+            two_above_offset = top0_row ? ((LOCAL_DIM/B_DIM - 1)*LOCAL_DIM) : ((row/B_DIM - 1)*LOCAL_DIM);
         } else {
-            assert(false);
+            two_above_offset = ((row/B_DIM)*LOCAL_DIM);
         }
+        scratch += device_packed_above1[two_above_offset + col_offset];
+    } else if (top1_of_block) {
+        if (top_p) {
+            two_above_offset = top1_row ? ((LOCAL_DIM/B_DIM - 1)*LOCAL_DIM) : ((row/B_DIM - 1)*LOCAL_DIM);
+        } else {
+            two_above_offset = ((row/B_DIM)*LOCAL_DIM);
+        }
+        scratch += device_packed_above0[two_above_offset + col_offset];
+    } else {
+        two_above_offset = ((row - 2) * LOCAL_DIM);
+        scratch += device_in[two_above_offset + col_offset];
     }
 
-    // Get row directly below
-    if ((row % b) < b - 1) {
-        int below_offset = ((row + 1) * local) + (col * vec);
-        scratch.x += (device_in[below_offset + vec_index].x * 8);
-    } else {
-        if (row == local - 1) {
-            int below_offset = (col * vec);
-            scratch.x += (device_packed_below0[below_offset + vec_index].x * 8);
+    int one_below_offset;
+    if (bottom0_of_block) {
+        if (bottom_p) {
+            one_below_offset = bottom0_row ? 0 : ((row/B_DIM + 1) * LOCAL_DIM);
         } else {
-            int below_offset = ((row/b + 1) * local) + (col * vec);
-            scratch.x += (device_packed_below0[below_offset + vec_index].x * 8);
+            one_below_offset = ((row/B_DIM) * LOCAL_DIM);
         }
+        scratch += (device_packed_below0[one_below_offset + col_offset] * 8);
+    } else {
+        one_below_offset = ((row + 1) * LOCAL_DIM);
+        scratch += (device_in[one_below_offset + col_offset] * 8);
     }
 
-    // Get row two steps below
-    if ((row % b) < b - 2) {
-        int below_offset = ((row + 2) * local) + (col * vec);
-        scratch.x -= device_in[below_offset + vec_index].x;
-    } else {
-        if (row == local - 1) {
-            int below_offset = (col * vec);
-            scratch.x -= device_packed_below1[below_offset + vec_index].x;
-        } else if (row == local - 2) {
-            int below_offset = (col * vec);
-            scratch.x -= device_packed_below0[below_offset + vec_index].x;
-        } else if ((row % b) == b - 1) {
-            int below_offset = ((row/b + 1) * local) + (col * vec);
-            scratch.x -= device_packed_below1[below_offset + vec_index].x;
-        } else if ((row % b) == b - 2) {
-            int below_offset = ((row/b + 1) * local) + (col * vec);
-            scratch.x -= device_packed_below0[below_offset + vec_index].x;
+    int two_below_offset;
+    if (bottom0_of_block) {
+        if (bottom_p) {            
+            two_below_offset = bottom0_row ? 0 : ((row/B_DIM + 1) * LOCAL_DIM);
         } else {
-            assert(false);
+            two_below_offset = ((row/B_DIM) * LOCAL_DIM);
         }
+        scratch -= device_packed_below1[two_below_offset + col_offset];
+    } else if (bottom1_of_block) {
+        if (bottom_p) {
+            two_below_offset = bottom1_row ? 0 : ((row/B_DIM + 1) * LOCAL_DIM);
+        } else {
+            two_below_offset = ((row/B_DIM) * LOCAL_DIM);
+        }
+        scratch -= device_packed_below0[two_below_offset + col_offset];
+    } else {
+        two_below_offset = ((row + 2) * LOCAL_DIM);
+        scratch -= device_in[two_below_offset + col_offset];
     }
 
-    scratch.x /= (12 * delta);
+    scratch /= (12 * delta);
     
-    device_out[my_offset + vec_index] = scratch;
+    device_out[my_offset] = scratch;
+}
+
+// FIXME: This needs integration and testing
+// Launch with <<<LOCAL_DIM/B_DIM, LOCAL_DIM>>>
+// NOTE: might need to swap these if the problem size gets very big due to max # threads in CTA
+__global__ void pack_dy(Scalar *device_in,
+                   Scalar *device_packed_top0, Scalar *device_packed_top1,
+                   Scalar *device_packed_bottom0, Scalar *device_packed_bottom1) {
+    
+    int i = blockIdx.x;
+    int j = threadIdx.x;
+    
+    device_packed_top0[i * LOCAL_DIM + j] = device_in[i * LOCAL_DIM * B_DIM + j];
+
+    int top1_offset = LOCAL_DIM;
+    device_packed_top1[i * LOCAL_DIM + j] = device_in[top1_offset + i * LOCAL_DIM * B_DIM + j];
+
+    int bottom0_offset = LOCAL_DIM * (B_DIM - 1);
+    device_packed_bottom0[i * LOCAL_DIM + j] = device_in[bottom0_offset + i * LOCAL_DIM * B_DIM + j];
+
+    int bottom1_offset = LOCAL_DIM * (B_DIM - 2);
+    device_packed_bottom1[i * LOCAL_DIM + j] = device_in[bottom1_offset + i * LOCAL_DIM * B_DIM + j];
 }
 
 // Packs the top row of all blocks
-void pack_dy_top0(interleaved_t *in, interleaved_t *packed) {
-    for (int i = 0; i < local/b; i++) {
-        for (int j = 0; j < local; j++) {
-            packed[i * local + j] = in[i * local * b + j];
+void pack_dy_top0(Scalar *in, Scalar *packed) {
+    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            packed[i * LOCAL_DIM + j] = in[i * LOCAL_DIM * B_DIM + j];
         }
     }
 }
 
 // Packs the second from top row of all blocks
-void pack_dy_top1(interleaved_t *in, interleaved_t *packed) {
-    int offset = local;
-    for (int i = 0; i < local/b; i++) {
-        for (int j = 0; j < local; j++) {
-            packed[i * local + j] = in[offset + i * local * b + j];
+void pack_dy_top1(Scalar *in, Scalar *packed) {
+    int offset = LOCAL_DIM;
+    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            packed[i * LOCAL_DIM + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
         }
     }
 }
 
 // Packs the bottom row of all blocks
-void pack_dy_bottom0(interleaved_t *in, interleaved_t *packed) {
-    int offset = local * (b - 1);
-    for (int i = 0; i < local/b; i++) {
-        for (int j = 0; j < local; j++) {
-            packed[i * local + j] = in[offset + i * local * b + j];
+void pack_dy_bottom0(Scalar *in, Scalar *packed) {
+    int offset = LOCAL_DIM * (B_DIM - 1);
+    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            packed[i * LOCAL_DIM + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
         }
     }
 }
 
 // Packs the second from bottom row of all blocks
-void pack_dy_bottom1(interleaved_t *in, interleaved_t *packed) {
-    int offset = local * (b - 2);
-    for (int i = 0; i < local/b; i++) {
-        for (int j = 0; j < local; j++) {
-            packed[i * local + j] = in[offset + i * local * b + j];
+void pack_dy_bottom1(Scalar *in, Scalar *packed) {
+    int offset = LOCAL_DIM * (B_DIM - 2);
+    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            packed[i * LOCAL_DIM + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
         }
     }
 }
 
-int main(int argc, char *argv[]) {
-    float delta = 1; // FIXME: find out what a realistic value is
-    int local_size = local*local*sizeof(interleaved_t);
-    int packed_row_size = local*(local/b)*sizeof(interleaved_t);
+// NOTE: This is just for testing
+void init_packed(int rid, int cid,
+                 Scalar *host_packed_above0, Scalar *host_packed_above1,
+                 Scalar *host_packed_below0, Scalar *host_packed_below1) {
 
-    interleaved_t *init = (interleaved_t*)malloc(local_size);
-    interleaved_t *host_in = (interleaved_t*)malloc(local_size);
-    interleaved_t *host_out = (interleaved_t*)malloc(local_size);
-    interleaved_t *host_packed_above0 = (interleaved_t*)malloc(packed_row_size);
-    interleaved_t *host_packed_above1 = (interleaved_t*)malloc(packed_row_size);
-    interleaved_t *host_packed_below0 = (interleaved_t*)malloc(packed_row_size);
-    interleaved_t *host_packed_below1 = (interleaved_t*)malloc(packed_row_size);
+    Scalar *host_in = (Scalar*)malloc(LOCAL_SCALAR_BYTES);
 
-    // Init block cyclic data as if you are the first processor in the rows and columns --> code taken from zmodel
-    for (int i = 0; i < local/b; i++) {
-        for (int ii = 0; ii < b; ii++) {
-            for (int j = 0; j < local/b; j++) {
-                for (int jj = 0; jj < b; jj++) {
-                    int array_index = (i * b * (local/b) * b) + (ii * (local/b) * b) + (j * b) + jj;
-                    float real = (i * N * b * p) + (ii * N) + (j * b * p) + jj;
-                    init[array_index] = {real, real};
-                    host_out[array_index] = {0.0, 0.0};
-                }
-            }
-        }
-    }
+    int above_rid = (rid == 0) ? P_DIM - 1 : rid - 1;
+    int below_rid = (rid + 1) % P_DIM;
 
-    // Pack data for the stencils --> code taken from zmodel
-    for (int i = 0; i < local; i++) {
-        for (int j = 0; j < b; j++) {
-            for (int jj = 0; jj < local/b; jj++) {
-                int row = i * local;
-                host_in[row + (j * (local/b))+ jj] = init[row + j + (jj * b)];
-            }
-        }
-    }
-
-    // Simulate communication
-    pack_dy_top0(host_in, host_packed_below0);
-    pack_dy_top1(host_in, host_packed_below1);
+    init_host_scalar(above_rid, cid, host_in);
     pack_dy_bottom0(host_in, host_packed_above0);
     pack_dy_bottom1(host_in, host_packed_above1);
 
-    // for (int i = 0; i < local/b; i++) {
-    //     for (int j = 0; j < local; j++) {
-    //         std::cout << "(" << host_packed_below1[i * local + j].x << "," << host_packed_below1[i * local + j].y << ") ";
+    init_host_scalar(below_rid, cid, host_in);
+    pack_dy_top0(host_in, host_packed_below0);
+    pack_dy_top1(host_in, host_packed_below1);
+
+    free(host_in);
+}
+
+void test_dy() {
+    Scalar delta = 1; // FIXME: find out what a realistic value is
+
+    int rid = 0;
+    int cid = 0;
+
+    Scalar *host_in = (Scalar*)malloc(LOCAL_SCALAR_BYTES);
+    Scalar *host_out = (Scalar*)malloc(LOCAL_SCALAR_BYTES);
+    Scalar *host_packed_above0 = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
+    Scalar *host_packed_above1 = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
+    Scalar *host_packed_below0 = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
+    Scalar *host_packed_below1 = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
+
+    init_host_scalar(rid, cid, host_in);
+
+    // Simulate communication
+    init_packed(rid, cid,
+                host_packed_above0, host_packed_above1,
+                host_packed_below0, host_packed_below1);
+
+    // for (int i = 0; i < LOCAL_DIM/b; i++) {
+    //     for (int j = 0; j < LOCAL_DIM; j++) {
+    //         std::cout << "(" << host_packed_below1[i * LOCAL_DIM + j].x << "," << host_packed_below1[i * LOCAL_DIM + j].y << ") ";
     //     }
     //     std::cout << std::endl;
     // }
 
-    interleaved_t *device_in, *device_out;
-    interleaved_t *device_packed_above0, *device_packed_above1;
-    interleaved_t *device_packed_below0, *device_packed_below1;
-    cudaMalloc((void**)&device_in, local_size);
-    cudaMalloc((void**)&device_out, local_size);
-    cudaMalloc((void**)&device_packed_above0, packed_row_size);
-    cudaMalloc((void**)&device_packed_above1, packed_row_size);
-    cudaMalloc((void**)&device_packed_below0, packed_row_size);
-    cudaMalloc((void**)&device_packed_below1, packed_row_size);
+    Scalar *device_in, *device_out;
+    Scalar *device_packed_above0, *device_packed_above1;
+    Scalar *device_packed_below0, *device_packed_below1;
+    cudaMalloc((void**)&device_in, LOCAL_SCALAR_BYTES);
+    cudaMalloc((void**)&device_out, LOCAL_SCALAR_BYTES);
+    cudaMalloc((void**)&device_packed_above0, PACKED_ROW_SCALAR_BYTES);
+    cudaMalloc((void**)&device_packed_above1, PACKED_ROW_SCALAR_BYTES);
+    cudaMalloc((void**)&device_packed_below0, PACKED_ROW_SCALAR_BYTES);
+    cudaMalloc((void**)&device_packed_below1, PACKED_ROW_SCALAR_BYTES);
 
-    cudaMemcpy(device_in, host_in, local_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_out, host_out, local_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_above0, host_packed_above0, packed_row_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_above1, host_packed_above1, packed_row_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_below0, host_packed_below0, packed_row_size, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_below1, host_packed_below1, packed_row_size, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_in, host_in, LOCAL_SCALAR_BYTES, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_out, host_out, LOCAL_SCALAR_BYTES, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_packed_above0, host_packed_above0, PACKED_ROW_SCALAR_BYTES, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_packed_above1, host_packed_above1, PACKED_ROW_SCALAR_BYTES, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_packed_below0, host_packed_below0, PACKED_ROW_SCALAR_BYTES, cudaMemcpyHostToDevice);
+    cudaMemcpy(device_packed_below1, host_packed_below1, PACKED_ROW_SCALAR_BYTES, cudaMemcpyHostToDevice);
 
-    dy<<<vec_total, vec>>>(device_in, device_out, delta,
+    dy<<<VEC_TOTAL, VEC>>>(device_in, device_out, rid, cid, delta,
                            device_packed_above0, device_packed_above1,
                            device_packed_below0, device_packed_below1);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(host_out, device_out, local_size, cudaMemcpyDeviceToHost);
+    cudaMemcpy(host_out, device_out, LOCAL_SCALAR_BYTES, cudaMemcpyDeviceToHost);
+
+    std::cout << "Host in" << std::endl;
+    for (int i = 0; i < LOCAL_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            std::cout << "(" << host_in[i * LOCAL_DIM + j] << ") ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
 
     std::cout << "Host out" << std::endl;
-    for (int i = 0; i < local; i++) {
-        for (int j = 0; j < local; j++) {
-            std::cout << "(" << host_out[i * local + j].x << "," << host_out[i * local + j].y << ") ";
+    for (int i = 0; i < LOCAL_DIM; i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            std::cout << "(" << host_out[i * LOCAL_DIM + j] << ") ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "host_packed_below0" << std::endl;
+    for (int i = 0; i < (LOCAL_DIM/B_DIM); i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            std::cout << "(" << host_packed_below0[i * LOCAL_DIM + j] << ") ";
+        }
+        std::cout << std::endl;
+    }
+    std::cout << std::endl;
+
+    std::cout << "host_packed_below1" << std::endl;
+    for (int i = 0; i < (LOCAL_DIM/B_DIM); i++) {
+        for (int j = 0; j < LOCAL_DIM; j++) {
+            std::cout << "(" << host_packed_below1[i * LOCAL_DIM + j] << ") ";
         }
         std::cout << std::endl;
     }
 
-    free(init);
     free(host_in);
     free(host_out);
     free(host_packed_above0);
