@@ -9,7 +9,7 @@ INCLUDE = -I$(LIB_PATH)/include
 CUDA_HOME=/usr/local/cuda
 
 ZMODEL_FILES = zmodel/main.cu zmodel/transforms/fft.cu zmodel/transforms/riesz.cu \
-zmodel/stencils/dy.cu
+zmodel/stencils/dx.cu zmodel/stencils/dy.cu
 
 .PHONY: zmodel
 

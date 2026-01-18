@@ -105,8 +105,8 @@ __global__ void dy(Scalar *device_in, Scalar *device_out,
 // Launch with <<<LOCAL_DIM/B_DIM, LOCAL_DIM>>>
 // NOTE: might need to swap these if the problem size gets very big due to max # threads in CTA
 __global__ void pack_dy(Scalar *device_in,
-                   Scalar *device_packed_top0, Scalar *device_packed_top1,
-                   Scalar *device_packed_bottom0, Scalar *device_packed_bottom1) {
+                        Scalar *device_packed_top0, Scalar *device_packed_top1,
+                        Scalar *device_packed_bottom0, Scalar *device_packed_bottom1) {
     
     int i = blockIdx.x;
     int j = threadIdx.x;
@@ -163,7 +163,7 @@ void pack_dy_bottom1(Scalar *in, Scalar *packed) {
 }
 
 // NOTE: This is just for testing
-void init_packed(int rid, int cid,
+void init_packed_dy(int rid, int cid,
                  Scalar *host_packed_above0, Scalar *host_packed_above1,
                  Scalar *host_packed_below0, Scalar *host_packed_below1) {
 
@@ -199,9 +199,9 @@ void test_dy() {
     init_host_scalar(rid, cid, host_in);
 
     // Simulate communication
-    init_packed(rid, cid,
-                host_packed_above0, host_packed_above1,
-                host_packed_below0, host_packed_below1);
+    init_packed_dy(rid, cid,
+                   host_packed_above0, host_packed_above1,
+                   host_packed_below0, host_packed_below1);
 
     // for (int i = 0; i < LOCAL_DIM/b; i++) {
     //     for (int j = 0; j < LOCAL_DIM; j++) {

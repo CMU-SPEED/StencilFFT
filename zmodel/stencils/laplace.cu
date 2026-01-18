@@ -414,6 +414,8 @@ void init_packed(int rid, int cid,
 
     init_host_scalar(below_rid, right_cid, host_in);
     pack_laplace_top_left(host_in, host_packed_below_right);
+
+    free(host_in);
 }
 
 void test_laplace() {
