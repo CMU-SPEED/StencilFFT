@@ -7,7 +7,7 @@
 #include <vector>
 
 #define __PRINT__TIMING__
-// #define __PRINT__DETAILED__TIMING__ 
+#define __PRINT__DETAILED__TIMING__ 
 #define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
@@ -16,6 +16,7 @@
 // #define __GPU__SET__
 // #define __PRINT__RESULTS__TO__FILE__
 // #define __USE__FFTDX__
+// #define  __ZMODEL__INCLUDE__INVERSE__
 
 // NOTE: these macros can be set on the commandline using: -UB_DIM -DB_DIM=8
 #ifndef N_DIM
@@ -30,8 +31,8 @@
     #define P_DIM (2)
 #endif
 
-#define RUNS (5)
-#define NUM_STREAMS (1)
+#define RUNS (1)
+#define NUM_STREAMS (4)
 
 using Complex = DEVICE_FFT_DOUBLECOMPLEX;
 using Scalar = double;
