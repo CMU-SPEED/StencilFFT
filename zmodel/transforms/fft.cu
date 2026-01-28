@@ -2,88 +2,7 @@
 #include <chrono>
 #include <complex>
 #include <fstream>
-
-void init_plans(cufftHandle *plan0, Vector<cufftHandle> &plan1,
-                cufftHandle *plan2, Vector<cufftHandle> &plan3, 
-                Vector<cudaStream_t> &streams) {
-    DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(plan0));    
-    DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(plan2));
-    for (int i = 0; i < NUM_STREAMS; i++) {
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(&plan1[i]));
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_CREATE(&plan3[i]));
-        DEVICE_RT_SAFE_CALL(DEVICE_STREAM_CREATE(&streams[i]));
-    }
-
-    const int rank0 = 1;
-    int n0[1] = { VEC };
-    int inembed0[1] = { VEC };
-    int onembed0[1] = { VEC };
-    const int istride0 = 1;
-    const int ostride0 = 1;
-    const int idist0 = VEC;
-    const int odist0 = VEC;
-    const int batch0 = VEC_TOTAL;
-    size_t workSize0 = 0;
-    DEVICE_FFT_SAFE_CALL(DEVICE_FFT_MAKE_PLAN_MANY(
-      *plan0, rank0, n0,
-      inembed0,  istride0, idist0,
-      onembed0,  ostride0, odist0,
-      DEVICE_FFT_Z2Z, batch0, &workSize0));
-
-    const int rank1 = 1;
-    int n1[1] = { LOCAL_DIM/(VEC/P_DIM) };
-    int inembed1[1] = { LOCAL_DIM };
-    int onembed1[1] = { LOCAL_DIM };
-    const int istride1 = VEC/P_DIM;
-    const int ostride1 = VEC/P_DIM;
-    const int idist1 = 1;
-    const int odist1 = 1;
-    const int batch1 = VEC/P_DIM;
-    size_t workSize1 = 0;
-    for (int i = 0; i < NUM_STREAMS; i++) {
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_MAKE_PLAN_MANY(
-          plan1[i], rank1, n1,
-          inembed1,  istride1, idist1,
-          onembed1,  ostride1, odist1,
-          DEVICE_FFT_Z2Z, batch1, &workSize1));
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_STREAM_SET(plan1[i], streams[i]));
-    }
-
-    const int rank2 = 1;
-    int n2[1] = { VEC };
-    int inembed2[1] = { LOCAL_DIM*LOCAL_DIM };
-    int onembed2[1] = { LOCAL_DIM*LOCAL_DIM };
-    const int istride2 = LOCAL_DIM*B_DIM;
-    const int ostride2 = LOCAL_DIM*B_DIM;
-    const int idist2 = 1;
-    const int odist2 = 1;
-    const int batch2 = LOCAL_DIM*B_DIM;
-    size_t workSize2 = 0;
-    DEVICE_FFT_SAFE_CALL(DEVICE_FFT_MAKE_PLAN_MANY(
-      *plan2, rank2, n2,
-      inembed2,  istride2, idist2,
-      onembed2,  ostride2, odist2,
-      DEVICE_FFT_Z2Z, batch2, &workSize2));
-
-    const int rank3 = 1;
-    int n3[1] = { B_DIM*P_DIM };
-    int inembed3[1] = { LOCAL_DIM*B_DIM*P_DIM };
-    int onembed3[1] = { LOCAL_DIM*B_DIM*P_DIM };
-    const int istride3 = LOCAL_DIM;
-    const int ostride3 = LOCAL_DIM;
-    const int idist3 = 1;
-    const int odist3 = 1;
-    const int batch3 = LOCAL_DIM;
-    size_t workSize3 = 0;
-    for (int i = 0; i < NUM_STREAMS; i++) {
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_MAKE_PLAN_MANY(
-            plan3[i], rank3, n3,
-            inembed3,  istride3, idist3,
-            onembed3,  ostride3, odist3,
-            DEVICE_FFT_Z2Z, batch3, &workSize3));
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_STREAM_SET(plan3[i], streams[i]));
-    }
-}
+#include "fft_host_plans.h"
 
 __global__ void pack_forward_all_to_all_row(Complex *device_in, Complex *device_out) {
     const int row = blockIdx.x / VEC_COL;
@@ -203,231 +122,236 @@ template<bool do_compute>
 void forward_fft(Complex *host_buf0, Complex *host_buf1, Complex *device_buf0, Complex *device_buf1,
                  Complex *device_twiddles0, Complex *device_twiddles1, MPI_Comm *row_comm, MPI_Comm *col_comm,
                  cufftHandle *plan0,  Vector<cufftHandle> &plan1, cufftHandle *plan2,  Vector<cufftHandle> &plan3,
-                 int id, Vector<cudaStream_t> &streams) {
+                 int id, Vector<cudaStream_t> &streams, FftdxFft1Ctx& ctx1) {
     #ifdef __PRINT__TIMING__
         MPI_Barrier(MPI_COMM_WORLD);
         auto start = std::chrono::high_resolution_clock::now();
     #endif // __PRINT__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_fft0 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_fft0 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    if constexpr (do_compute) {
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan0, device_buf0, device_buf1, DEVICE_FFT_FORWARD));
-        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
-    } else {
-        placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);        
-    }
+    // if constexpr (do_compute) {
+    //     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan0, device_buf0, device_buf1, DEVICE_FFT_FORWARD));
+    //     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    // } else {
+    //     placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);        
+    // }
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_fft0 = std::chrono::high_resolution_clock::now();
-        auto duration_fft0 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft0 - start_fft0); 
-        long long ns_fft0 = duration_fft0.count(); 
-        long long max_time_fft0 = 0; 
-        MPI_Reduce(&ns_fft0, &max_time_fft0, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
-        if (id == 0) std::cout << "FFT0 " << max_time_fft0 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_fft0 = std::chrono::high_resolution_clock::now();
+    //     auto duration_fft0 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft0 - start_fft0); 
+    //     long long ns_fft0 = duration_fft0.count(); 
+    //     long long max_time_fft0 = 0; 
+    //     MPI_Reduce(&ns_fft0, &max_time_fft0, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
+    //     if (id == 0) std::cout << "FFT0 " << max_time_fft0 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_pack0 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_pack0 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    pack_forward_all_to_all_row<<<VEC_TOTAL, VEC>>>(device_buf1, device_buf0);
-    DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    // pack_forward_all_to_all_row<<<VEC_TOTAL, VEC>>>(device_buf1, device_buf0);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_pack0 = std::chrono::high_resolution_clock::now();
-        auto duration_pack0 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_pack0 - start_pack0); 
-        long long ns_pack0 = duration_pack0.count(); 
-        long long max_time_pack0 = 0; 
-        MPI_Reduce(&ns_pack0, &max_time_pack0, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
-        if (id == 0) std::cout << "PACK0 " << max_time_pack0 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_pack0 = std::chrono::high_resolution_clock::now();
+    //     auto duration_pack0 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_pack0 - start_pack0); 
+    //     long long ns_pack0 = duration_pack0.count(); 
+    //     long long max_time_pack0 = 0; 
+    //     MPI_Reduce(&ns_pack0, &max_time_pack0, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
+    //     if (id == 0) std::cout << "PACK0 " << max_time_pack0 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_comms0 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_comms0 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __GPU__AWARE__MPI__
-        MPI_Alltoall(device_buf0,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    device_buf1,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    *row_comm);
-    #else
-        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(host_buf0, device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
-        MPI_Alltoall(host_buf0,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    host_buf1, 
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    *row_comm);
-        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf1, host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
-    #endif // __GPU__AWARE__MPI__
+    // #ifdef __GPU__AWARE__MPI__
+    //     MPI_Alltoall(device_buf0,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 device_buf1,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 *row_comm);
+    // #else
+    //     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(host_buf0, device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
+    //     MPI_Alltoall(host_buf0,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 host_buf1, 
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 *row_comm);
+    //     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf1, host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    // #endif // __GPU__AWARE__MPI__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_comms0 = std::chrono::high_resolution_clock::now();
-        auto duration_comms0 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_comms0 - start_comms0); 
-        long long ns_comms0 = duration_comms0.count(); 
-        long long max_time_comms0 = 0; 
-        MPI_Reduce(&ns_comms0, &max_time_comms0, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
-        if (id == 0) std::cout << "COMMS0 " << max_time_comms0 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_comms0 = std::chrono::high_resolution_clock::now();
+    //     auto duration_comms0 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_comms0 - start_comms0); 
+    //     long long ns_comms0 = duration_comms0.count(); 
+    //     long long max_time_comms0 = 0; 
+    //     MPI_Reduce(&ns_comms0, &max_time_comms0, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
+    //     if (id == 0) std::cout << "COMMS0 " << max_time_comms0 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_pack1 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_pack1 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
     
-    pack_forward_fft0<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0, device_twiddles0);
-    DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    // pack_forward_fft0<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0, device_twiddles0);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_pack1 = std::chrono::high_resolution_clock::now();
-        auto duration_pack1 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_pack1 - start_pack1); 
-        long long ns_pack1 = duration_pack1.count(); 
-        long long max_time_pack1 = 0; 
-        MPI_Reduce(&ns_pack1, &max_time_pack1, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
-        if (id == 0) std::cout << "PACK1 " << max_time_pack1 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_pack1 = std::chrono::high_resolution_clock::now();
+    //     auto duration_pack1 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_pack1 - start_pack1); 
+    //     long long ns_pack1 = duration_pack1.count(); 
+    //     long long max_time_pack1 = 0; 
+    //     MPI_Reduce(&ns_pack1, &max_time_pack1, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); 
+    //     if (id == 0) std::cout << "PACK1 " << max_time_pack1 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_fft1 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_fft1 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
     if constexpr (do_compute) {
-        for (int row = 0; row < LOCAL_DIM; row++) {
-            Complex* row_ptr0 = device_buf0 + row * LOCAL_DIM;
-            Complex* row_ptr1 = device_buf1 + row * LOCAL_DIM;
-            DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(plan1[row % NUM_STREAMS], row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
-        }
+        #ifdef __USE__FFTDX__
+            fft1_row_grouped_cufftdx_kernel<typename FftdxFft1Ctx::FFT, FftdxFft1Ctx::VEC_SPLIT>
+            <<<ctx1.grid, ctx1.block, ctx1.shmem>>>(device_buf0, device_buf1, ctx1.ws);
+        #else
+            for (int row = 0; row < LOCAL_DIM; row++) {
+                Complex* row_ptr0 = device_buf0 + row * LOCAL_DIM;
+                Complex* row_ptr1 = device_buf1 + row * LOCAL_DIM;
+                DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(plan1[row % NUM_STREAMS], row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
+            }
+        #endif
         DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
     } else {
         placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);
     }
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_fft1 = std::chrono::high_resolution_clock::now();
-        auto duration_fft1 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft1 - start_fft1); 
-        long long ns_fft1 = duration_fft1.count(); 
-        long long max_time_fft1 = 0; 
-        MPI_Reduce(&ns_fft1, &max_time_fft1, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
-        if (id == 0) std::cout << "FFT1 " << max_time_fft1 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_fft1 = std::chrono::high_resolution_clock::now();
+    //     auto duration_fft1 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft1 - start_fft1); 
+    //     long long ns_fft1 = duration_fft1.count(); 
+    //     long long max_time_fft1 = 0; 
+    //     MPI_Reduce(&ns_fft1, &max_time_fft1, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+    //     if (id == 0) std::cout << "FFT1 " << max_time_fft1 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_fft2 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_fft2 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    if constexpr (do_compute) {
-        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan2, device_buf1, device_buf0, DEVICE_FFT_FORWARD));
-        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
-    } else {
-        placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0);
-    }
+    // if constexpr (do_compute) {
+    //     DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(*plan2, device_buf1, device_buf0, DEVICE_FFT_FORWARD));
+    //     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    // } else {
+    //     placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0);
+    // }
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_fft2 = std::chrono::high_resolution_clock::now();
-        auto duration_fft2 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft2 - start_fft2); 
-        long long ns_fft2 = duration_fft2.count(); 
-        long long max_time_fft2 = 0; 
-        MPI_Reduce(&ns_fft2, &max_time_fft2, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
-        if (id == 0) std::cout << "FFT2 " << max_time_fft2 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_fft2 = std::chrono::high_resolution_clock::now();
+    //     auto duration_fft2 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft2 - start_fft2); 
+    //     long long ns_fft2 = duration_fft2.count(); 
+    //     long long max_time_fft2 = 0; 
+    //     MPI_Reduce(&ns_fft2, &max_time_fft2, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+    //     if (id == 0) std::cout << "FFT2 " << max_time_fft2 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_comms1 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_comms1 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __GPU__AWARE__MPI__
-        MPI_Alltoall(device_buf0,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    device_buf1,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    *col_comm);
-    #else
-        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(host_buf0, device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
-        MPI_Alltoall(host_buf0,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    host_buf1,
-                    (LOCAL_DIM*LOCAL_DIM)/P_DIM,
-                    MPI_C_DOUBLE_COMPLEX,
-                    *col_comm);
-        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf1, host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
-    #endif // __GPU__AWARE__MPI__
+    // #ifdef __GPU__AWARE__MPI__
+    //     MPI_Alltoall(device_buf0,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 device_buf1,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 *col_comm);
+    // #else
+    //     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(host_buf0, device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
+    //     MPI_Alltoall(host_buf0,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 host_buf1,
+    //                 (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+    //                 MPI_C_DOUBLE_COMPLEX,
+    //                 *col_comm);
+    //     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(device_buf1, host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    // #endif // __GPU__AWARE__MPI__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_comms1 = std::chrono::high_resolution_clock::now();
-        auto duration_comms1 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_comms1 - start_comms1);
-        long long ns_comms1 = duration_comms1.count();
-        long long max_time_comms1 = 0;
-        MPI_Reduce(&ns_comms1, &max_time_comms1, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
-        if (id == 0) std::cout << "COMMS1 " << max_time_comms1 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_comms1 = std::chrono::high_resolution_clock::now();
+    //     auto duration_comms1 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_comms1 - start_comms1);
+    //     long long ns_comms1 = duration_comms1.count();
+    //     long long max_time_comms1 = 0;
+    //     MPI_Reduce(&ns_comms1, &max_time_comms1, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+    //     if (id == 0) std::cout << "COMMS1 " << max_time_comms1 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_pack2 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_pack2 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    pack_forward_fft1<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0, device_twiddles1);
-    DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    // pack_forward_fft1<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(device_buf1, device_buf0, device_twiddles1);
+    // DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_pack2 = std::chrono::high_resolution_clock::now();
-        auto duration_pack2 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_pack2 - start_pack2); 
-        long long ns_pack2 = duration_pack2.count(); 
-        long long max_time_pack2 = 0; 
-        MPI_Reduce(&ns_pack2, &max_time_pack2, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
-        if (id == 0) std::cout << "PACK2 " << max_time_pack2 << " ns" << std::endl; 
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_pack2 = std::chrono::high_resolution_clock::now();
+    //     auto duration_pack2 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_pack2 - start_pack2); 
+    //     long long ns_pack2 = duration_pack2.count(); 
+    //     long long max_time_pack2 = 0; 
+    //     MPI_Reduce(&ns_pack2, &max_time_pack2, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+    //     if (id == 0) std::cout << "PACK2 " << max_time_pack2 << " ns" << std::endl; 
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto start_fft3 = std::chrono::high_resolution_clock::now();
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto start_fft3 = std::chrono::high_resolution_clock::now();
+    // #endif // __PRINT__DETAILED__TIMING__
 
-    if constexpr (do_compute) {
-        for (int row = 0; row < LOCAL_DIM/(P_DIM*B_DIM); row++) {
-            Complex* row_ptr0 = device_buf0 + row * LOCAL_DIM * P_DIM * B_DIM;
-            Complex* row_ptr1 = device_buf1 + row * LOCAL_DIM * P_DIM * B_DIM;
-            DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(plan3[row % NUM_STREAMS], row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
-        }
-        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
-    } else {
-        placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);
-    }
+    // if constexpr (do_compute) {
+    //     for (int row = 0; row < LOCAL_DIM/(P_DIM*B_DIM); row++) {
+    //         Complex* row_ptr0 = device_buf0 + row * LOCAL_DIM * P_DIM * B_DIM;
+    //         Complex* row_ptr1 = device_buf1 + row * LOCAL_DIM * P_DIM * B_DIM;
+    //         DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(plan3[row % NUM_STREAMS], row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
+    //     }
+    //     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    // } else {
+    //     placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(device_buf0, device_buf1);
+    // }
 
-    #ifdef __PRINT__DETAILED__TIMING__
-        MPI_Barrier(MPI_COMM_WORLD);
-        auto end_fft3 = std::chrono::high_resolution_clock::now();
-        auto duration_fft3 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft3 - start_fft3); 
-        long long ns_fft3 = duration_fft3.count();
-        long long max_time_fft3 = 0; 
-        MPI_Reduce(&ns_fft3, &max_time_fft3, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
-        if (id == 0) std::cout << "FFT3 " << max_time_fft3 << " ns" << std::endl;
-    #endif // __PRINT__DETAILED__TIMING__
+    // #ifdef __PRINT__DETAILED__TIMING__
+    //     MPI_Barrier(MPI_COMM_WORLD);
+    //     auto end_fft3 = std::chrono::high_resolution_clock::now();
+    //     auto duration_fft3 = std::chrono::duration_cast<std::chrono::nanoseconds>(end_fft3 - start_fft3); 
+    //     long long ns_fft3 = duration_fft3.count();
+    //     long long max_time_fft3 = 0; 
+    //     MPI_Reduce(&ns_fft3, &max_time_fft3, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+    //     if (id == 0) std::cout << "FFT3 " << max_time_fft3 << " ns" << std::endl;
+    // #endif // __PRINT__DETAILED__TIMING__
 
     #ifdef __PRINT__TIMING__
         MPI_Barrier(MPI_COMM_WORLD);
@@ -443,12 +367,12 @@ void forward_fft(Complex *host_buf0, Complex *host_buf1, Complex *device_buf0, C
 template void forward_fft<false>(Complex*, Complex*, Complex*, Complex*,
                                  Complex*, Complex*, MPI_Comm*, MPI_Comm*,
                                  cufftHandle*, Vector<cufftHandle>&, cufftHandle*, Vector<cufftHandle>&, 
-                                 int, Vector<cudaStream_t>&);
+                                 int, Vector<cudaStream_t>&, FftdxFft1Ctx&);
 
 template void forward_fft<true>(Complex*, Complex*, Complex*, Complex*,
                                 Complex*, Complex*, MPI_Comm*, MPI_Comm*,
                                 cufftHandle*, Vector<cufftHandle>&, cufftHandle*, Vector<cufftHandle>&,
-                                int, Vector<cudaStream_t>&);
+                                int, Vector<cudaStream_t>&, FftdxFft1Ctx&);
 
 template<bool do_compute>
 __global__ void pack_inverse_all_to_all_row(Complex *device_in, Complex *device_out, Complex scale) {
@@ -718,6 +642,9 @@ void test_fft() {
     Vector<cudaStream_t> streams(NUM_STREAMS);
     init_plans(&plan0, plan1, &plan2, plan3, streams);
 
+    FftdxFft1Ctx ctx1;
+    init_fftdx_fft1(ctx1);
+
     Complex *host_buf0, *host_buf1, *host_forward_twiddles0, *host_forward_twiddles1, *host_inverse_twiddles0, *host_inverse_twiddles1;
     DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&host_buf0, LOCAL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
     DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&host_buf1, LOCAL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
@@ -768,10 +695,10 @@ void test_fft() {
         constexpr bool do_compute = false;
     #endif
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < RUNS; i++) {
         forward_fft<do_compute>(host_buf0, host_buf1, device_buf0, device_buf1,
                                 device_forward_twiddles0, device_forward_twiddles1, 
-                                &row_comm, &col_comm, &plan0, plan1, &plan2, plan3, id, streams);
+                                &row_comm, &col_comm, &plan0, plan1, &plan2, plan3, id, streams, ctx1);
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
@@ -801,7 +728,7 @@ void test_fft() {
     }
     #endif
 
-    #ifdef __PRINT__RESULTS__TO__FILE___
+    #ifdef __PRINT__RESULTS__TO__FILE__
         std::string filename = "output_r" + std::to_string(rid)
                             + "_c" + std::to_string(cid)
                             + ".txt";
