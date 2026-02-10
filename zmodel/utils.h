@@ -6,6 +6,12 @@
 #include "device_macros.h"
 #include <vector>
 
+using Complex = DEVICE_FFT_DOUBLECOMPLEX;
+using Scalar = double;
+
+template <typename T>
+using Vector = std::vector<T>;
+
 #define __PRINT__TIMING__
 #define __PRINT__DETAILED__TIMING__ 
 #define __PRINT__RESULTS__
@@ -34,12 +40,6 @@
 #define RUNS (1)
 #define NUM_STREAMS (4)
 
-using Complex = DEVICE_FFT_DOUBLECOMPLEX;
-using Scalar = double;
-
-template <typename T>
-using Vector = std::vector<T>;
-
 #define LOCAL_DIM (N_DIM/P_DIM)
 #define LOCAL_COMPLEX_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
 #define LOCAL_SCALAR_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Scalar))
@@ -55,7 +55,7 @@ using Vector = std::vector<T>;
 #define VEC_ROW (LOCAL_DIM) // Number of vectors in a col
 #define VEC_COL (B_DIM)     // Number of vectors in a row
 
-static inline void init_host(int rid, int cid, Complex *host_in) {
+inline void init_host(int rid, int cid, Complex *host_in) {
     int row_offset = cid * B_DIM;           // offset based on which processor in the row
     int col_offset = rid * (N_DIM*B_DIM);   // offset based on which processor in the col
     int offset = row_offset + col_offset;
@@ -87,7 +87,7 @@ static inline void init_host(int rid, int cid, Complex *host_in) {
 }
 
 // FIXME: combine this with the complex version
-static inline void init_host_scalar(int rid, int cid, Scalar *host_in) {
+inline void init_host_scalar(int rid, int cid, Scalar *host_in) {
     int row_offset = cid * B_DIM;           // offset based on which processor in the row
     int col_offset = rid * (N_DIM*B_DIM);   // offset based on which processor in the col
     int offset = row_offset + col_offset;
@@ -118,7 +118,7 @@ static inline void init_host_scalar(int rid, int cid, Scalar *host_in) {
     free(init);
 }
 
-static inline void print_block_cyclic(Complex *host_in) {
+inline void print_block_cyclic(Complex *host_in) {
     Complex *init = (Complex*)malloc(LOCAL_COMPLEX_BYTES);
 
     for (int i = 0; i < LOCAL_DIM; i++) {
@@ -141,7 +141,7 @@ static inline void print_block_cyclic(Complex *host_in) {
     free(init);
 }
 
-static inline void store_block_cyclic(Complex *host_in) {
+inline void store_block_cyclic(Complex *host_in) {
     Complex *init = (Complex*)malloc(LOCAL_COMPLEX_BYTES);
 
     for (int i = 0; i < LOCAL_DIM; i++) {

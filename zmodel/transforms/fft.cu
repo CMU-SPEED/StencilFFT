@@ -382,7 +382,7 @@ void init_inverse_twiddles1(Complex *in, int rid) {
 }
 
 /**
- * @brief 
+ * @brief
  * Data starts in device_buf0
  * Data ends in device_buf1
  */
@@ -485,6 +485,18 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
 }
 
 void test_fft() {
+    #ifdef __ZMODEL__INCLUDE__INVERSE__
+        constexpr bool include_inverse = true;
+    #else
+        constexpr bool include_inverse = false;
+    #endif
+
+    #ifdef __ZMODEL__COMPUTE__
+        constexpr bool do_compute = true;
+    #else
+        constexpr bool do_compute = false;
+    #endif
+
     MPI_Init(NULL, NULL);
 
     #ifdef __GPU__SET__
@@ -524,44 +536,34 @@ void test_fft() {
     MPI_Comm_split(MPI_COMM_WORLD, cid, id, &col_comm);
 
     FftHostPlans host_plans;
-    FftdxFft1Ctx ctx1;
-    FftdxFft3Ctx ctx3;
     init_plans(host_plans);
-    init_fftdx_fft1(ctx1);
-    init_fftdx_fft3(ctx3);
 
-    #ifdef __ZMODEL__INCLUDE__INVERSE__
-        constexpr bool include_inverse = true;
-    #else
-        constexpr bool include_inverse = false;
-    #endif
+    FftdxFft1Ctx ctx1;
+    init_fftdx_fft1(ctx1);
+
+    FftdxFft3Ctx ctx3;
+    init_fftdx_fft3(ctx3);
 
     FftBuffers buffers;
     init_buffers<include_inverse>(buffers, rid, cid);
 
     #ifdef __PRINT__TWIDDLES__
-    if (id == 0) {
-        std::cout << "Twiddles" << std::endl;
-        std::cout << "rid: " << rid << " " << "cid: " << cid << std::endl;
-        for (int i = 0; i < LOCAL_DIM; i++) {
-            for (int j = 0; j < LOCAL_DIM; j++) {
-                std::cout << "(" << buffers.host_forward_twiddles1[i * LOCAL_DIM + j].x \
-                << ", " << buffers.host_forward_twiddles1[i * LOCAL_DIM + j].y << ") ";
+        if (id == 0) {
+            std::cout << "Twiddles" << std::endl;
+            std::cout << "rid: " << rid << " " << "cid: " << cid << std::endl;
+            for (int i = 0; i < LOCAL_DIM; i++) {
+                for (int j = 0; j < LOCAL_DIM; j++) {
+                    std::cout << "(" << buffers.host_forward_twiddles1[i * LOCAL_DIM + j].x \
+                    << ", " << buffers.host_forward_twiddles1[i * LOCAL_DIM + j].y << ") ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
         }
-    }
     #endif
 
     // Used to scale the inverse fft
     double s = 1.0 / (double(N_DIM) * double(N_DIM));
     Complex scale = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(s, 0.0);
-
-    #ifdef __ZMODEL__COMPUTE__
-        constexpr bool do_compute = true;
-    #else
-        constexpr bool do_compute = false;
-    #endif
 
     for (int i = 0; i < RUNS; i++) {
         forward_fft<do_compute>(buffers, &row_comm, &col_comm, id, host_plans, ctx1, ctx3);
