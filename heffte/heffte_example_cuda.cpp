@@ -1,5 +1,7 @@
 #include "heffte.h"
 #include <chrono>
+#include <iostream>
+#include "heffte_plan_logic.h"
 
 /*!
  * \brief HeFFTe example 5, using the cuFFT backend.
@@ -37,7 +39,13 @@ void compute_dft(MPI_Comm comm, int N){
 
     // define the heffte class and the input and output geometry
     // heffte::plan_options can be specified just as in the backend::fftw
-    heffte::fft3d<heffte::backend::cufft> fft(my_box, my_box, comm);
+    //heffte::fft3d<heffte::backend::cufft> fft(my_box, my_box, comm);
+
+    //heffte::plan_options options;
+    heffte::plan_options options = heffte::default_options<heffte::backend::cufft>();
+    options.algorithm = heffte::reshape_algorithm::alltoall;
+    options.use_gpu_aware = true;
+    heffte::fft3d<heffte::backend::cufft> fft(my_box, my_box, comm, options);
 
     // create some input on the CPU
     std::vector<std::complex<double>> input(fft.size_inbox());
@@ -66,7 +74,7 @@ void compute_dft(MPI_Comm comm, int N){
     static_assert(std::is_same<decltype(gpu_output), decltype(workspace)>::value,
                   "the containers for the output and workspace have different types");
 
-    for (int i = 0; i < 5; i++) {
+    for (int i = 0; i < 10; i++) {
         MPI_Barrier(MPI_COMM_WORLD);
 
         auto start = std::chrono::high_resolution_clock::now();
@@ -74,11 +82,19 @@ void compute_dft(MPI_Comm comm, int N){
         // perform forward fft using arrays and the user-created workspace
         fft.forward(gpu_input.data(), gpu_output.data(), workspace.data(), heffte::scale::full);
 
+	cudaDeviceSynchronize();
+
         MPI_Barrier(MPI_COMM_WORLD);
 
         auto end = std::chrono::high_resolution_clock::now();
         auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
-        if (me == 0) std::cout << "FFT" << duration.count() << " ns" << std::endl;
+	//std::cout << "FFT " << duration.count() << " ns, me:" << me << std::endl;
+	
+	long long time = duration.count();
+
+	long long max_time = 0;
+    	MPI_Reduce(&time, &max_time, 1, MPI_LONG_LONG, MPI_MAX, 0, comm);
+    	if (me == 0) std::cout << "iter=" << i << " max_time=" << max_time << " ns\n";
     }
 
     
@@ -107,11 +123,11 @@ void compute_dft(MPI_Comm comm, int N){
 
 int main(int argc, char** argv){
     if (argc < 2) {
-        cout<<"Please provide N, b, and p"<<endl;
+	std::cout<<"Please provide N, b, and p"<<std::endl;
         return 1;
     }
 
-    N = atoi(argv[1]);
+    int N = atoi(argv[1]);
     
     MPI_Init(NULL, NULL);
 
