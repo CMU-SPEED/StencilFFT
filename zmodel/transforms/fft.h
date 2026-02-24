@@ -40,6 +40,8 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
 
 void test_fft();
 
+void test_fft_3d();
+
 template<bool include_inverse>
 void init_buffers(FftBuffers& buffers, int rid, int cid) {
     DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&buffers.host_buf0, LOCAL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
@@ -98,7 +100,5 @@ void destroy_buffers(FftBuffers& buffers) {
         DEVICE_RT_SAFE_CALL(DEVICE_FREE(buffers.device_inverse_twiddles1));
     }
 }
-
-
 
 #endif // __ZMODEL__FFT__

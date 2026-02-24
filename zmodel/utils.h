@@ -40,6 +40,10 @@ using Vector = std::vector<T>;
 #define RUNS (1)
 #define NUM_STREAMS (4)
 
+#define CUFFTDX_TARGET_SM 750
+
+/******************** 2D MACROS ********************/
+
 #define LOCAL_DIM (N_DIM/P_DIM)
 #define LOCAL_COMPLEX_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
 #define LOCAL_SCALAR_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Scalar))
@@ -54,6 +58,12 @@ using Vector = std::vector<T>;
  
 #define VEC_ROW (LOCAL_DIM) // Number of vectors in a col
 #define VEC_COL (B_DIM)     // Number of vectors in a row
+
+/******************** 3D MACROS ********************/
+
+#define LOCAL_COMPLEX_BYTES_3D (LOCAL_DIM*LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
+
+/******************** 2D Init ********************/
 
 inline void init_host(int rid, int cid, Complex *host_in) {
     int row_offset = cid * B_DIM;           // offset based on which processor in the row
@@ -161,5 +171,7 @@ inline void store_block_cyclic(Complex *host_in) {
 
     free(init);
 }
+
+/******************** 3D Init ********************/
 
 #endif // __ZMODEL__UTILS__
