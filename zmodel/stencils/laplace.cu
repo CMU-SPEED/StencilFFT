@@ -1,7 +1,6 @@
 #include <iostream>
 #include "../utils.h"
 
-// FIXME: Check that the column alignment vec shift isnt parameterized by the number of processors or something else
 // FIXME: I wonder if we can make some of these if else checks happen at compile time
 // FIXME: the corners should be broken out into helper functions in order to cleanup redundant code
 // FIXME: Need to add scaling factor
@@ -53,10 +52,10 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
             // Therefore there is no need to consider the case of wrap around
             above_offset = ((row/B_DIM)*LOCAL_DIM) + (col * VEC);
         }
-        // scratch += device_packed_above[above_offset + vec_index];
+        scratch += device_packed_above[above_offset + vec_index];
     } else {
         above_offset = ((row - 1) * LOCAL_DIM) + (col * VEC);
-        // scratch += device_in[above_offset + vec_index];
+        scratch += device_in[above_offset + vec_index];
     }
 
     // Get row below
@@ -72,10 +71,10 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
         } else {
             below_offset = ((row/B_DIM) * LOCAL_DIM) + (col * VEC);
         }
-        // scratch += device_packed_below[below_offset + vec_index];
+        scratch += device_packed_below[below_offset + vec_index];
     } else {
         below_offset = ((row + 1) * LOCAL_DIM) + (col * VEC);
-        // scratch += device_in[below_offset + vec_index];
+        scratch += device_in[below_offset + vec_index];
     }
 
     // Get col to left
@@ -85,10 +84,10 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
         // Periodic boundary conditions force you to shift the vec to align elements when on leftmost processor
         left_offset = (row * VEC);
         int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-        // scratch += device_packed_left[left_offset + new_vec_index];
+        scratch += device_packed_left[left_offset + new_vec_index];
     } else {
         left_offset = (row * LOCAL_DIM) + ((col - 1) * VEC);
-        // scratch += device_in[left_offset + vec_index];
+        scratch += device_in[left_offset + vec_index];
     }
 
     // Get col to right
@@ -97,10 +96,10 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
     if (rightmost_col) {
         right_offset = (row * VEC);
         int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-        // scratch += device_packed_right[right_offset + new_vec_index];
+        scratch += device_packed_right[right_offset + new_vec_index];
     } else {
         right_offset = (row * LOCAL_DIM) + ((col + 1) * VEC);
-        // scratch += device_in[right_offset + vec_index];
+        scratch += device_in[right_offset + vec_index];
     }
 
     // Top left corner
@@ -128,20 +127,20 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
             if (leftmost_col) {
                 // leftmost gets data from corner packing
                 int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                // scratch += device_packed_above_left[top_left_offset + new_vec_index];
+                scratch += device_packed_above_left[top_left_offset + new_vec_index];
             } else {
                 // Non leftmost gets data from above
-                // scratch += device_packed_above[top_left_offset + vec_index];
+                scratch += device_packed_above[top_left_offset + vec_index];
             }
         } else {
             // Use the same row of the packed data because it is not the top p
             if (leftmost_col) {
                 top_left_offset = ((row/B_DIM) * VEC);
                 int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                // scratch += device_packed_above_left[top_left_offset + new_vec_index];
+                scratch += device_packed_above_left[top_left_offset + new_vec_index];
             } else {
                 top_left_offset = ((row/B_DIM)*LOCAL_DIM) + ((col - 1) * VEC);
-                // scratch += device_packed_above[top_left_offset + vec_index];
+                scratch += device_packed_above[top_left_offset + vec_index];
             }
         }
     } else {
@@ -149,10 +148,10 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
         if (leftmost_col) {
             top_left_offset = ((row - 1) * VEC);
             int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-            // scratch += device_packed_left[top_left_offset + new_vec_index];
+            scratch += device_packed_left[top_left_offset + new_vec_index];
         } else {
             top_left_offset = ((row - 1) * LOCAL_DIM) + ((col - 1) * VEC);
-            // scratch += device_in[top_left_offset + vec_index];
+            scratch += device_in[top_left_offset + vec_index];
         }
     }
 
@@ -176,28 +175,28 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
 
             if (rightmost_col) {
                 int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                // scratch += device_packed_above_right[top_right_offset + new_vec_index];
+                scratch += device_packed_above_right[top_right_offset + new_vec_index];
             } else {
-                // scratch += device_packed_above[top_right_offset + vec_index];
+                scratch += device_packed_above[top_right_offset + vec_index];
             }
         } else {
             if (rightmost_col) {
                 top_right_offset = ((row/B_DIM) * VEC);
                 int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                // scratch += device_packed_above_right[top_right_offset + new_vec_index];
+                scratch += device_packed_above_right[top_right_offset + new_vec_index];
             } else {
                 top_right_offset = ((row/B_DIM) * LOCAL_DIM) + ((col + 1) * VEC);
-                // scratch += device_packed_above[top_right_offset + vec_index];
+                scratch += device_packed_above[top_right_offset + vec_index];
             }
         }
     } else {
         if (rightmost_col) {
             top_right_offset = ((row - 1) * VEC);
             int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-            // scratch += device_packed_right[top_right_offset + new_vec_index];
+            scratch += device_packed_right[top_right_offset + new_vec_index];
         } else {
             top_right_offset = ((row - 1) * LOCAL_DIM) + ((col + 1) * VEC);
-            // scratch += device_in[top_right_offset + vec_index];
+            scratch += device_in[top_right_offset + vec_index];
         }
     }
 
@@ -221,29 +220,29 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
 
             if (leftmost_col) {
                 int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                // scratch += device_packed_below_left[bottom_left_offset + new_vec_index];
+                scratch += device_packed_below_left[bottom_left_offset + new_vec_index];
             } else {
-                // scratch += device_packed_below[bottom_left_offset + vec_index];
+                scratch += device_packed_below[bottom_left_offset + vec_index];
             }
 
         } else {
             if (leftmost_col) {
                 bottom_left_offset = ((row/B_DIM) * VEC);
                 int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                // scratch += device_packed_below_left[bottom_left_offset + new_vec_index];
+                scratch += device_packed_below_left[bottom_left_offset + new_vec_index];
             } else {
                 bottom_left_offset = ((row/B_DIM) * LOCAL_DIM) + ((col - 1) * VEC);
-                // scratch += device_packed_below[bottom_left_offset + vec_index];
+                scratch += device_packed_below[bottom_left_offset + vec_index];
             }
         }
     } else {
         if (leftmost_col) {
             bottom_left_offset = ((row + 1) * VEC);
             int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-            // scratch += device_packed_left[bottom_left_offset + new_vec_index];
+            scratch += device_packed_left[bottom_left_offset + new_vec_index];
         } else {
             bottom_left_offset = ((row + 1) * LOCAL_DIM) + ((col - 1) * VEC);
-            // scratch += device_in[bottom_left_offset + vec_index];
+            scratch += device_in[bottom_left_offset + vec_index];
         }
     }
 
@@ -267,29 +266,29 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
 
             if (rightmost_col) {
                 int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                // scratch += device_packed_below_right[bottom_right_offset + new_vec_index];
+                scratch += device_packed_below_right[bottom_right_offset + new_vec_index];
             } else {
-                // scratch += device_packed_below[bottom_right_offset + vec_index];
+                scratch += device_packed_below[bottom_right_offset + vec_index];
             }
 
         } else {
             if (rightmost_col) {
                 bottom_right_offset = ((row/B_DIM) * VEC);
                 int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                // scratch += device_packed_below_right[bottom_right_offset + new_vec_index];
+                scratch += device_packed_below_right[bottom_right_offset + new_vec_index];
             } else {
                 bottom_right_offset = ((row/B_DIM) * LOCAL_DIM) + ((col + 1) * VEC);
-                // scratch += device_packed_below[bottom_right_offset + vec_index];
+                scratch += device_packed_below[bottom_right_offset + vec_index];
             }
         }
     } else {
         if (rightmost_col) {
             bottom_right_offset = ((row + 1) * VEC);
             int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-            // scratch += device_packed_right[bottom_right_offset + new_vec_index];
+            scratch += device_packed_right[bottom_right_offset + new_vec_index];
         } else {
             bottom_right_offset = ((row + 1) * LOCAL_DIM) + ((col + 1) * VEC);
-            // scratch += device_in[bottom_right_offset + vec_index];
+            scratch += device_in[bottom_right_offset + vec_index];
         }
     }
 
@@ -418,6 +417,8 @@ void init_packed(int rid, int cid,
     free(host_in);
 }
 
+// TODO: GPU packing kernels
+// TODO: clean this up in general --> structs
 void test_laplace() {
     Scalar *host_in = (Scalar*)malloc(LOCAL_SCALAR_BYTES);
     Scalar *host_out = (Scalar*)calloc(LOCAL_DIM*LOCAL_DIM, sizeof(Scalar));

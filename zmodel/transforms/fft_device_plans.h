@@ -5,8 +5,6 @@
 #include <cufftdx.hpp>
 using namespace cufftdx;
 
-#define CUFFTDX_TARGET_SM 750
-
 struct FftdxFft1Ctx {
     static constexpr int VEC_SPLIT = VEC / P_DIM;
     static constexpr int FFT_SIZE  = LOCAL_DIM / VEC_SPLIT;

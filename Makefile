@@ -11,7 +11,7 @@ CUDA_HOME=/usr/local/cuda
 FFTDX_INCLUDE=-I/afs/andrew.cmu.edu/usr12/cjstange/private/fftdx/nvidia-mathdx-25.12.1-cuda13/nvidia/mathdx/25.12/include
 
 ZMODEL_FILES = zmodel/main.cu zmodel/transforms/fft.cu zmodel/transforms/riesz.cu \
-zmodel/stencils/dx.cu zmodel/stencils/dy.cu
+zmodel/stencils/laplace.cu zmodel/stencils/dx.cu zmodel/stencils/dy.cu zmodel/transforms/fft3d.cu
 
 .PHONY: zmodel
 
@@ -29,6 +29,7 @@ zmodel:
 	nvcc -ccbin=mpicxx -std=c++17 -DCUFFTDX_DISABLE_CUTLASS_DEPENDENCY -I$(CUDA_HOME)/include \
 	$(FFTDX_INCLUDE) $(ZMODEL_FILES) -o zmodel.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
 	mpiexec -n 4 ./zmodel.x
+# Uncomment and swap in this line if you want to run the code on multple machines
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 4 ./zmodel.x
 
 measure_cuda_ab:
