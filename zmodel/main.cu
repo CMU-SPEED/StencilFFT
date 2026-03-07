@@ -5,10 +5,10 @@
 // #include "./stencils/dx.h"
 
 int main(void) {
-    test_fft();
+    // test_fft();
     // test_fft_3d();
     // test_riesz();
-    // test_laplace();
+    test_laplace();
     // test_dx();
     // test_dy();
     return 0;

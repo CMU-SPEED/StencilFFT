@@ -3,6 +3,7 @@
 #include "../utils.h"
 
 /**
+ * 2D matrix
  * Compute the 4th order finite difference in the x dimension
  * Apply the filter [1, −8, 0, 8, −1] / (12 * delta) on the grid [i-1, i-1, i, i+1, i+2]
  */
@@ -148,11 +149,11 @@ void init_packed_dx(int rid, int cid,
     int left_cid = (cid == 0) ? P_DIM - 1 : cid - 1;
     int right_cid = (cid + 1) % P_DIM;
 
-    init_host_scalar(rid, right_cid, host_in);
+    init_host(rid, right_cid, host_in);
     pack_dx_left0(host_in, host_packed_right0);
     pack_dx_left1(host_in, host_packed_right1);
 
-    init_host_scalar(rid, left_cid, host_in);
+    init_host(rid, left_cid, host_in);
     pack_dx_right0(host_in, host_packed_left0);
     pack_dx_right1(host_in, host_packed_left1);
 
@@ -172,7 +173,7 @@ void test_dx() {
     Scalar *host_packed_right0 = (Scalar*)malloc(PACKED_COL_SCALAR_BYTES);
     Scalar *host_packed_right1 = (Scalar*)malloc(PACKED_COL_SCALAR_BYTES);
 
-    init_host_scalar(rid, cid, host_in);
+    init_host(rid, cid, host_in);
 
     // Simulate communication
     init_packed_dx(rid, cid,

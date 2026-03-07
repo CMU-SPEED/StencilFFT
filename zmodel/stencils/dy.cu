@@ -4,6 +4,7 @@
 #include "../utils.h"
 
 /**
+ * 2D matrix
  * Compute the 4th order finite difference in the y dimension
  */
 __global__ void dy(Scalar *device_in, Scalar *device_out, 
@@ -172,11 +173,11 @@ void init_packed_dy(int rid, int cid,
     int above_rid = (rid == 0) ? P_DIM - 1 : rid - 1;
     int below_rid = (rid + 1) % P_DIM;
 
-    init_host_scalar(above_rid, cid, host_in);
+    init_host(above_rid, cid, host_in);
     pack_dy_bottom0(host_in, host_packed_above0);
     pack_dy_bottom1(host_in, host_packed_above1);
 
-    init_host_scalar(below_rid, cid, host_in);
+    init_host(below_rid, cid, host_in);
     pack_dy_top0(host_in, host_packed_below0);
     pack_dy_top1(host_in, host_packed_below1);
 
@@ -196,7 +197,7 @@ void test_dy() {
     Scalar *host_packed_below0 = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
     Scalar *host_packed_below1 = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
 
-    init_host_scalar(rid, cid, host_in);
+    init_host(rid, cid, host_in);
 
     // Simulate communication
     init_packed_dy(rid, cid,

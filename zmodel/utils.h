@@ -26,10 +26,10 @@ using Vector = std::vector<T>;
 
 // NOTE: these macros can be set on the commandline using: -UB_DIM -DB_DIM=8
 #ifndef N_DIM
-    #define N_DIM (64)
+    #define N_DIM (16)
 #endif
 #ifndef B_DIM
-    #define B_DIM (4)
+    #define B_DIM (2)
 #endif
 #ifndef P_DIM
     // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
@@ -45,7 +45,13 @@ using Vector = std::vector<T>;
 /******************** 2D MACROS ********************/
 
 #define LOCAL_DIM (N_DIM/P_DIM)
+
 #define LOCAL_COMPLEX_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
+#define PACKED_ROW_COMPLEX (LOCAL_DIM*(LOCAL_DIM/B_DIM))
+#define PACKED_ROW_COMPLEX_BYTES (PACKED_ROW_COMPLEX*sizeof(Complex))
+#define PACKED_COL_COMPLEX (LOCAL_DIM*VEC)
+#define PACKED_COL_COMPLEX_BYTES (PACKED_COL_COMPLEX*sizeof(Complex))
+
 #define LOCAL_SCALAR_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Scalar))
 #define PACKED_ROW_SCALAR_BYTES (LOCAL_DIM*(LOCAL_DIM/B_DIM)*sizeof(Scalar))
 #define PACKED_COL_SCALAR_BYTES (LOCAL_DIM*VEC*sizeof(Scalar))
@@ -63,46 +69,33 @@ using Vector = std::vector<T>;
 
 #define LOCAL_COMPLEX_BYTES_3D (LOCAL_DIM*LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
 
-/******************** 2D Init ********************/
+/******************** Operators ********************/
 
-inline void init_host(int rid, int cid, Complex *host_in) {
-    int row_offset = cid * B_DIM;           // offset based on which processor in the row
-    int col_offset = rid * (N_DIM*B_DIM);   // offset based on which processor in the col
-    int offset = row_offset + col_offset;
-
-    Complex *init = (Complex*)malloc(LOCAL_COMPLEX_BYTES);
-    
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int ii = 0; ii < B_DIM; ii++) {
-            for (int j = 0; j < LOCAL_DIM/B_DIM; j++) {
-                for (int jj = 0; jj < B_DIM; jj++) {
-                    int array_index = (i * B_DIM * (LOCAL_DIM/B_DIM) * B_DIM) + (ii * (LOCAL_DIM/B_DIM) * B_DIM) + (j * B_DIM) + jj;
-                    double real = (i * N_DIM * B_DIM * P_DIM) + (ii * N_DIM) + (j * B_DIM * P_DIM) + jj + offset;
-                    init[array_index] = {real, 0.0};
-                }
-            }
-        }
-    }
-
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < B_DIM; j++) {
-            for (int jj = 0; jj < LOCAL_DIM/B_DIM; jj++) {
-                int row = i * LOCAL_DIM;
-                host_in[row + (j * (LOCAL_DIM/B_DIM))+ jj] = init[row + j + (jj * B_DIM)];
-            }
-        }
-    }
-
-    free(init);
+__host__ __device__ static inline Complex operator*(double a, const Complex& b) {
+    return {a * b.x, a * b.y};
 }
 
-// FIXME: combine this with the complex version
-inline void init_host_scalar(int rid, int cid, Scalar *host_in) {
+__host__ __device__ static inline Complex& operator+=(Complex& a, const Complex& b) {
+    a.x += b.x;
+    a.y += b.y;
+    return a;
+}
+
+__host__ __device__ static inline Complex& operator-=(Complex& a, const Complex& b) {
+    a.x -= b.x;
+    a.y -= b.y;
+    return a;
+}
+
+/******************** 2D Init ********************/
+
+template<typename T>
+inline void init_host(int rid, int cid, T *host_in) {
     int row_offset = cid * B_DIM;           // offset based on which processor in the row
     int col_offset = rid * (N_DIM*B_DIM);   // offset based on which processor in the col
     int offset = row_offset + col_offset;
 
-    Scalar *init = (Scalar*)malloc(LOCAL_COMPLEX_BYTES);
+    T*init = (T*)malloc(LOCAL_COMPLEX_BYTES);
     
     for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
         for (int ii = 0; ii < B_DIM; ii++) {
@@ -110,7 +103,12 @@ inline void init_host_scalar(int rid, int cid, Scalar *host_in) {
                 for (int jj = 0; jj < B_DIM; jj++) {
                     int array_index = (i * B_DIM * (LOCAL_DIM/B_DIM) * B_DIM) + (ii * (LOCAL_DIM/B_DIM) * B_DIM) + (j * B_DIM) + jj;
                     double real = (i * N_DIM * B_DIM * P_DIM) + (ii * N_DIM) + (j * B_DIM * P_DIM) + jj + offset;
-                    init[array_index] = real;
+
+                    if constexpr (std::is_same_v<T, Complex>) {
+                        init[array_index] = {real, 0.0};
+                    } else {
+                        init[array_index] = real;
+                    }
                 }
             }
         }

@@ -49,6 +49,5 @@ test_cufft:
 	nvcc -std=c++17 -I$(CUDA_HOME)/include measure/test_cufft.cu -o test_cufft.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
 	./test_cufft.x
 
-
 clean:
 	rm *.x

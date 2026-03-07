@@ -1,22 +1,62 @@
 #include <iostream>
-#include "../utils.h"
+#include "laplace.h"
+#include "../transforms/fft.h"
 
-// FIXME: I wonder if we can make some of these if else checks happen at compile time
-// FIXME: the corners should be broken out into helper functions in order to cleanup redundant code
-// FIXME: Need to add scaling factor
-__global__ void laplace(Scalar *device_in, Scalar *device_out,
-                        int rid, int cid,
-                        Scalar *device_packed_above, Scalar *device_packed_below,
-                        Scalar *device_packed_left, Scalar *device_packed_right,
-                        Scalar *device_packed_above_left, Scalar *device_packed_above_right,
-                        Scalar *device_packed_below_left, Scalar *device_packed_below_right) {
+void init_laplace_buffers(LaplaceBuffers& laplace_buffers) {
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_send_above, PACKED_ROW_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_send_below, PACKED_ROW_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_send_left, PACKED_COL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_send_right, PACKED_COL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_recv_above, PACKED_ROW_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_recv_below, PACKED_ROW_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_recv_left, PACKED_COL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_recv_right, PACKED_COL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_send_above, PACKED_ROW_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_send_below, PACKED_ROW_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_send_left, PACKED_COL_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_send_right, PACKED_COL_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_recv_above, PACKED_ROW_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_recv_below, PACKED_ROW_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_recv_left, PACKED_COL_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&laplace_buffers.device_recv_right, PACKED_COL_COMPLEX_BYTES));
+}
+
+
+void destroy_laplace_buffers(LaplaceBuffers& laplace_buffers) {
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_send_above));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_send_below));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_send_left));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_send_right));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_recv_above));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_recv_below));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_recv_left));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(laplace_buffers.host_recv_right));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_send_above));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_send_below));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_send_left));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_send_right));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_recv_above));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_recv_below));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_recv_left));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_recv_right));
+} 
+
+
+/**
+ * 2D matrix
+ * 
+ * 5 point laplacian stencil on complex data
+ * 
+ */
+__global__ void laplace(Complex *device_in, Complex *device_out, 
+                        LaplaceBuffers laplace_buffers, int rid, int cid) {
     int row = blockIdx.x / VEC_COL;
     int col = blockIdx.x % VEC_COL;
     int my_offset = (row * LOCAL_DIM) + (col * VEC);
 
     int vec_index = threadIdx.x;
 
-    float scratch = 0.0;
+    Complex scratch = {0.0, 0.0};
 
     // The vector sits at the top of the block it is in
     bool top_of_block = ((row % B_DIM) == 0);
@@ -52,7 +92,7 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
             // Therefore there is no need to consider the case of wrap around
             above_offset = ((row/B_DIM)*LOCAL_DIM) + (col * VEC);
         }
-        scratch += device_packed_above[above_offset + vec_index];
+        scratch += laplace_buffers.device_recv_above[above_offset + vec_index];
     } else {
         above_offset = ((row - 1) * LOCAL_DIM) + (col * VEC);
         scratch += device_in[above_offset + vec_index];
@@ -71,7 +111,7 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
         } else {
             below_offset = ((row/B_DIM) * LOCAL_DIM) + (col * VEC);
         }
-        scratch += device_packed_below[below_offset + vec_index];
+        scratch += laplace_buffers.device_recv_below[below_offset + vec_index];
     } else {
         below_offset = ((row + 1) * LOCAL_DIM) + (col * VEC);
         scratch += device_in[below_offset + vec_index];
@@ -84,7 +124,7 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
         // Periodic boundary conditions force you to shift the vec to align elements when on leftmost processor
         left_offset = (row * VEC);
         int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-        scratch += device_packed_left[left_offset + new_vec_index];
+        scratch += laplace_buffers.device_recv_left[left_offset + new_vec_index];
     } else {
         left_offset = (row * LOCAL_DIM) + ((col - 1) * VEC);
         scratch += device_in[left_offset + vec_index];
@@ -96,413 +136,156 @@ __global__ void laplace(Scalar *device_in, Scalar *device_out,
     if (rightmost_col) {
         right_offset = (row * VEC);
         int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-        scratch += device_packed_right[right_offset + new_vec_index];
+        scratch += laplace_buffers.device_recv_right[right_offset + new_vec_index];
     } else {
         right_offset = (row * LOCAL_DIM) + ((col + 1) * VEC);
         scratch += device_in[right_offset + vec_index];
     }
 
-    // Top left corner
-    int top_left_offset;
-    if (top_of_block) {
-        if (top_p) {
-            // Calculate the offset
-            if (top_block) {
-                if (leftmost_col) {
-                    // Data comes from corner packing so no col offset
-                    top_left_offset = ((LOCAL_DIM/B_DIM - 1) * VEC);
-                } else {
-                    // Data comes from above packing so the whole row is stored
-                    top_left_offset = ((LOCAL_DIM/B_DIM - 1) * LOCAL_DIM) + ((col - 1) * VEC);
-                }
-            } else {
-                if (leftmost_col) {
-                    top_left_offset = ((row/B_DIM - 1) * VEC);
-                } else {
-                    top_left_offset = ((row/B_DIM - 1) * LOCAL_DIM) + ((col - 1) * VEC);
-                }
-            }
-
-            // Calculate the shift
-            if (leftmost_col) {
-                // leftmost gets data from corner packing
-                int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                scratch += device_packed_above_left[top_left_offset + new_vec_index];
-            } else {
-                // Non leftmost gets data from above
-                scratch += device_packed_above[top_left_offset + vec_index];
-            }
-        } else {
-            // Use the same row of the packed data because it is not the top p
-            if (leftmost_col) {
-                top_left_offset = ((row/B_DIM) * VEC);
-                int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                scratch += device_packed_above_left[top_left_offset + new_vec_index];
-            } else {
-                top_left_offset = ((row/B_DIM)*LOCAL_DIM) + ((col - 1) * VEC);
-                scratch += device_packed_above[top_left_offset + vec_index];
-            }
-        }
-    } else {
-        // This is the base case
-        if (leftmost_col) {
-            top_left_offset = ((row - 1) * VEC);
-            int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-            scratch += device_packed_left[top_left_offset + new_vec_index];
-        } else {
-            top_left_offset = ((row - 1) * LOCAL_DIM) + ((col - 1) * VEC);
-            scratch += device_in[top_left_offset + vec_index];
-        }
-    }
-
-    // Top right corner
-    int top_right_offset;
-    if (top_of_block) {
-        if (top_p) {
-            if (top_block) {
-                if (rightmost_col) {
-                    top_right_offset = ((LOCAL_DIM/B_DIM - 1) * VEC);
-                } else {
-                    top_right_offset = ((LOCAL_DIM/B_DIM - 1) * LOCAL_DIM) + ((col + 1) * VEC);
-                }
-            } else {
-                if (rightmost_col) {
-                    top_right_offset = ((row/B_DIM - 1) * VEC);
-                } else {
-                    top_right_offset = ((row/B_DIM - 1) * LOCAL_DIM) + ((col + 1) * VEC);
-                }
-            }
-
-            if (rightmost_col) {
-                int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                scratch += device_packed_above_right[top_right_offset + new_vec_index];
-            } else {
-                scratch += device_packed_above[top_right_offset + vec_index];
-            }
-        } else {
-            if (rightmost_col) {
-                top_right_offset = ((row/B_DIM) * VEC);
-                int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                scratch += device_packed_above_right[top_right_offset + new_vec_index];
-            } else {
-                top_right_offset = ((row/B_DIM) * LOCAL_DIM) + ((col + 1) * VEC);
-                scratch += device_packed_above[top_right_offset + vec_index];
-            }
-        }
-    } else {
-        if (rightmost_col) {
-            top_right_offset = ((row - 1) * VEC);
-            int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-            scratch += device_packed_right[top_right_offset + new_vec_index];
-        } else {
-            top_right_offset = ((row - 1) * LOCAL_DIM) + ((col + 1) * VEC);
-            scratch += device_in[top_right_offset + vec_index];
-        }
-    }
-
-    // Bottom left corner
-    int bottom_left_offset;
-    if (bottom_of_block) {
-        if (bottom_p) {
-            if (bottom_block) {
-                if (leftmost_col) {
-                    bottom_left_offset = (0 * VEC);
-                } else {
-                    bottom_left_offset = (0 * LOCAL_DIM) + ((col - 1) * VEC);
-                }
-            } else {
-                if (leftmost_col) {
-                    bottom_left_offset = ((row/B_DIM + 1) * VEC);
-                } else {
-                    bottom_left_offset = ((row/B_DIM + 1) * LOCAL_DIM) + ((col - 1) * VEC);
-                }
-            }
-
-            if (leftmost_col) {
-                int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                scratch += device_packed_below_left[bottom_left_offset + new_vec_index];
-            } else {
-                scratch += device_packed_below[bottom_left_offset + vec_index];
-            }
-
-        } else {
-            if (leftmost_col) {
-                bottom_left_offset = ((row/B_DIM) * VEC);
-                int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-                scratch += device_packed_below_left[bottom_left_offset + new_vec_index];
-            } else {
-                bottom_left_offset = ((row/B_DIM) * LOCAL_DIM) + ((col - 1) * VEC);
-                scratch += device_packed_below[bottom_left_offset + vec_index];
-            }
-        }
-    } else {
-        if (leftmost_col) {
-            bottom_left_offset = ((row + 1) * VEC);
-            int new_vec_index = leftmost_p ? (vec_index - 1 + VEC) % VEC : vec_index;
-            scratch += device_packed_left[bottom_left_offset + new_vec_index];
-        } else {
-            bottom_left_offset = ((row + 1) * LOCAL_DIM) + ((col - 1) * VEC);
-            scratch += device_in[bottom_left_offset + vec_index];
-        }
-    }
-
-    // Bottom right corner
-    int bottom_right_offset;
-    if (bottom_of_block) {
-        if (bottom_p) {
-            if (bottom_block) {
-                if (rightmost_col) {
-                    bottom_right_offset = (0 * VEC);
-                } else {
-                    bottom_right_offset = (0 * LOCAL_DIM) + ((col + 1) * VEC);
-                }
-            } else {
-                if (rightmost_col) {
-                    bottom_right_offset = ((row/B_DIM + 1) * VEC);
-                } else {
-                    bottom_right_offset = ((row/B_DIM + 1) * LOCAL_DIM) + ((col + 1) * VEC);
-                }
-            }
-
-            if (rightmost_col) {
-                int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                scratch += device_packed_below_right[bottom_right_offset + new_vec_index];
-            } else {
-                scratch += device_packed_below[bottom_right_offset + vec_index];
-            }
-
-        } else {
-            if (rightmost_col) {
-                bottom_right_offset = ((row/B_DIM) * VEC);
-                int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-                scratch += device_packed_below_right[bottom_right_offset + new_vec_index];
-            } else {
-                bottom_right_offset = ((row/B_DIM) * LOCAL_DIM) + ((col + 1) * VEC);
-                scratch += device_packed_below[bottom_right_offset + vec_index];
-            }
-        }
-    } else {
-        if (rightmost_col) {
-            bottom_right_offset = ((row + 1) * VEC);
-            int new_vec_index = rightmost_p ? (vec_index + 1) % VEC : vec_index;
-            scratch += device_packed_right[bottom_right_offset + new_vec_index];
-        } else {
-            bottom_right_offset = ((row + 1) * LOCAL_DIM) + ((col + 1) * VEC);
-            scratch += device_in[bottom_right_offset + vec_index];
-        }
-    }
-
+    scratch -= 4*device_in[my_offset + vec_index];
     device_out[my_offset + vec_index] = scratch;
 }
 
-// Packs the top row of all blocks
-void pack_laplace_top(Scalar *in, Scalar *packed) {
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int j = 0; j < LOCAL_DIM; j++) {
-            packed[i * LOCAL_DIM + j] = in[i * LOCAL_DIM * B_DIM + j];
-        }
+
+__global__ void pack_laplace(Complex *device_in, LaplaceBuffers laplace_buffers) {
+    int i = blockIdx.x;
+    int j = threadIdx.x;
+
+    // dy packing: only first LOCAL_DIM/B_DIM blocks, all LOCAL_DIM threads
+    if (i < LOCAL_DIM / B_DIM) {
+        laplace_buffers.device_send_above[i * LOCAL_DIM + j] = device_in[i * LOCAL_DIM * B_DIM + j];
+
+        int bottom_offset = LOCAL_DIM * (B_DIM - 1);
+        laplace_buffers.device_send_below[i * LOCAL_DIM + j] = device_in[bottom_offset + i * LOCAL_DIM * B_DIM + j];
+    }
+
+    // dx packing: all LOCAL_DIM blocks, only first VEC threads
+    if (j < VEC) {
+        laplace_buffers.device_send_left[i * VEC + j] = device_in[i * LOCAL_DIM + j];
+
+        int right_offset = LOCAL_DIM - VEC;
+        laplace_buffers.device_send_right[i * VEC + j] = device_in[right_offset + i * LOCAL_DIM + j];
     }
 }
 
-// Packs the bottom row of all blocks
-void pack_laplace_bottom(Scalar *in, Scalar *packed) {
-    int offset = LOCAL_DIM * (B_DIM - 1);
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int j = 0; j < LOCAL_DIM; j++) {
-            packed[i * LOCAL_DIM + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
-        }
-    }
+
+void communicate_laplace(LaplaceBuffers& laplace_buffers,
+                         MPI_Comm& row_comm, MPI_Comm& col_comm, int rid, int cid) {
+    int left  = (cid - 1 + P_DIM) % P_DIM;
+    int right = (cid + 1)         % P_DIM;
+    int up    = (rid - 1 + P_DIM) % P_DIM;
+    int down  = (rid + 1)         % P_DIM;
+
+    #ifdef __GPU__AWARE__MPI__
+        MPI_Sendrecv(laplace_buffers.device_send_right, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, right, 0,
+                     laplace_buffers.device_recv_left, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, left, 0,
+                     row_comm, MPI_STATUS_IGNORE);
+    #else
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.host_send_right, laplace_buffers.device_send_right, 
+                                            PACKED_COL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
+        MPI_Sendrecv(laplace_buffers.host_send_right, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, right, 0,
+                     laplace_buffers.host_recv_left, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, left, 0,
+                     row_comm, MPI_STATUS_IGNORE);
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.device_recv_left, laplace_buffers.host_recv_left, 
+                                            PACKED_COL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    #endif
+
+    #ifdef __GPU__AWARE__MPI__
+        MPI_Sendrecv(laplace_buffers.device_send_left, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, left, 1,
+                     laplace_buffers.device_recv_right, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, right, 1,
+                     row_comm, MPI_STATUS_IGNORE);
+    #else
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.host_send_left, laplace_buffers.device_send_left, 
+                                            PACKED_COL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
+        MPI_Sendrecv(laplace_buffers.host_send_left, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, left, 1,
+                     laplace_buffers.host_recv_right, PACKED_COL_COMPLEX, MPI_C_DOUBLE_COMPLEX, right, 1,
+                     row_comm, MPI_STATUS_IGNORE);
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.device_recv_right, laplace_buffers.host_recv_right, 
+                                            PACKED_COL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    #endif
+
+    #ifdef __GPU__AWARE__MPI__
+        MPI_Sendrecv(laplace_buffers.device_send_above, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, up, 2,
+                     laplace_buffers.device_recv_below, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, down, 2,
+                     col_comm, MPI_STATUS_IGNORE);
+    #else
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.host_send_above, laplace_buffers.device_send_above,
+                                            PACKED_ROW_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
+        MPI_Sendrecv(laplace_buffers.host_send_above, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, up, 2,
+                     laplace_buffers.host_recv_below, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, down, 2,
+                     col_comm, MPI_STATUS_IGNORE);
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.device_recv_below, laplace_buffers.host_recv_below,
+                                            PACKED_ROW_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    #endif
+
+    #ifdef __GPU__AWARE__MPI__
+        MPI_Sendrecv(laplace_buffers.device_send_below, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, down, 3,
+                     laplace_buffers.device_recv_above, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, up, 3,
+                     col_comm, MPI_STATUS_IGNORE);
+    #else
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.host_send_below, laplace_buffers.device_send_below, 
+                                            PACKED_ROW_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
+        MPI_Sendrecv(laplace_buffers.host_send_below, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, down, 3,
+                     laplace_buffers.host_recv_above, PACKED_ROW_COMPLEX, MPI_C_DOUBLE_COMPLEX, up, 3,
+                     col_comm, MPI_STATUS_IGNORE);
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(laplace_buffers.device_recv_above, laplace_buffers.host_recv_above,
+                                            PACKED_ROW_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    #endif
 }
 
-// Packs the leftmost col of vec in local
-void pack_laplace_left(Scalar *in, Scalar *packed) {
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < VEC; j++) {
-            packed[i * VEC + j] = in[i * LOCAL_DIM + j];
-        }
-    }
-}
 
-// Packs the rightmost col of vec in local
-void pack_laplace_right(Scalar *in, Scalar *packed) {
-    int offset = LOCAL_DIM - VEC;
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < VEC; j++) {
-            packed[i * VEC + j] = in[offset + i * LOCAL_DIM + j];
-        }
-    }
-}
-
-// Packs the top left element
-// This corresponds to the top vec in each block of the leftmost col in local
-void pack_laplace_top_left(Scalar *in, Scalar *packed) {
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int j = 0; j < VEC; j++) {
-            packed[i * VEC + j] = in[i * LOCAL_DIM * B_DIM + j];
-        }
-    }
-}
-
-// Packs the top right element
-// This corresponds to the top vec in each block of the rightmost col in local
-void pack_laplace_top_right(Scalar *in, Scalar *packed) {
-    int offset = LOCAL_DIM - VEC;
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int j = 0; j < VEC; j++) {
-            packed[i * VEC + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
-        }
-    }
-}
-
-// Pack the bottom left element
-// This corresponds to the bottom vec in each block of the leftmost col in local
-void pack_laplace_bottom_left(Scalar *in, Scalar *packed) {
-    int offset = LOCAL_DIM * (B_DIM - 1);
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int j = 0; j < VEC; j++) {
-            packed[i * VEC + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
-        }
-    }
-}
-
-// Pack the bottom right element
-// This corresponds to the bottom vec in each block of the rightmost col in local
-void pack_laplace_bottom_right(Scalar *in, Scalar *packed) {
-    int offset = (LOCAL_DIM * (B_DIM - 1)) + (LOCAL_DIM - VEC);
-    for (int i = 0; i < LOCAL_DIM/B_DIM; i++) {
-        for (int j = 0; j < VEC; j++) {
-            packed[i * VEC + j] = in[offset + i * LOCAL_DIM * B_DIM + j];
-        }
-    }
-}
-
-// NOTE: This is just for testing
-void init_packed(int rid, int cid,
-                 Scalar *host_packed_above, Scalar *host_packed_below,
-                 Scalar *host_packed_left, Scalar *host_packed_right,
-                 Scalar *host_packed_above_left, Scalar *host_packed_above_right,
-                 Scalar *host_packed_below_left, Scalar *host_packed_below_right) {
-
-    Scalar *host_in = (Scalar*)malloc(LOCAL_SCALAR_BYTES);
-
-    int above_rid = (rid == 0) ? P_DIM - 1 : rid - 1;
-    int below_rid = (rid + 1) % P_DIM;
-    int left_cid = (cid == 0) ? P_DIM - 1 : cid - 1;
-    int right_cid = (cid + 1) % P_DIM;
-
-    init_host_scalar(above_rid, cid, host_in);
-    pack_laplace_bottom(host_in, host_packed_above);
-
-    init_host_scalar(below_rid, cid, host_in);
-    pack_laplace_top(host_in, host_packed_below);
-
-    init_host_scalar(rid, left_cid, host_in);
-    pack_laplace_right(host_in, host_packed_left);
-
-    init_host_scalar(rid, right_cid, host_in);
-    pack_laplace_left(host_in, host_packed_right);
-
-    init_host_scalar(above_rid, left_cid, host_in);
-    pack_laplace_bottom_right(host_in, host_packed_above_left);
-
-    init_host_scalar(above_rid, right_cid, host_in);
-    pack_laplace_bottom_left(host_in, host_packed_above_right);
-
-    init_host_scalar(below_rid, left_cid, host_in);
-    pack_laplace_top_right(host_in, host_packed_below_left);
-
-    init_host_scalar(below_rid, right_cid, host_in);
-    pack_laplace_top_left(host_in, host_packed_below_right);
-
-    free(host_in);
-}
-
-// TODO: GPU packing kernels
-// TODO: clean this up in general --> structs
 void test_laplace() {
-    Scalar *host_in = (Scalar*)malloc(LOCAL_SCALAR_BYTES);
-    Scalar *host_out = (Scalar*)calloc(LOCAL_DIM*LOCAL_DIM, sizeof(Scalar));
-    Scalar *host_packed_above = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
-    Scalar *host_packed_below = (Scalar*)malloc(PACKED_ROW_SCALAR_BYTES);
-    Scalar *host_packed_left = (Scalar*)malloc(PACKED_COL_SCALAR_BYTES);
-    Scalar *host_packed_right = (Scalar*)malloc(PACKED_COL_SCALAR_BYTES);
-    Scalar *host_packed_above_left = (Scalar*)malloc(PACKED_CORNER_SCALAR_BYTES);
-    Scalar *host_packed_above_right = (Scalar*)malloc(PACKED_CORNER_SCALAR_BYTES);
-    Scalar *host_packed_below_left = (Scalar*)malloc(PACKED_CORNER_SCALAR_BYTES);
-    Scalar *host_packed_below_right = (Scalar*)malloc(PACKED_CORNER_SCALAR_BYTES);
+    MPI_Init(NULL, NULL);
 
-    int rid = 0;
-    int cid = 0;
+    int P, id;
+    P = P_DIM * P_DIM;
+    MPI_Comm_rank(MPI_COMM_WORLD, &id);
+    MPI_Comm_size(MPI_COMM_WORLD, &P);
 
-    init_host_scalar(rid, cid, host_in);
+    MPI_Comm row_comm, col_comm;
 
-    init_packed(rid, cid,
-                host_packed_above, host_packed_below,
-                host_packed_left, host_packed_right,
-                host_packed_above_left, host_packed_above_right,
-                host_packed_below_left, host_packed_below_right);
+    int rid = id / P_DIM;
+    MPI_Comm_split(MPI_COMM_WORLD, rid, id, &row_comm);
 
-    Scalar *device_in, *device_out;
-    Scalar *device_packed_above, *device_packed_below, *device_packed_left, *device_packed_right;
-    Scalar *device_packed_above_left, *device_packed_above_right, *device_packed_below_left, *device_packed_below_right;
-    cudaMalloc((void**)&device_in, LOCAL_SCALAR_BYTES);
-    cudaMalloc((void**)&device_out, LOCAL_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_above, PACKED_ROW_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_below, PACKED_ROW_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_left, PACKED_COL_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_right, PACKED_COL_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_above_left, PACKED_CORNER_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_above_right, PACKED_CORNER_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_below_left, PACKED_CORNER_SCALAR_BYTES);
-    cudaMalloc((void**)&device_packed_below_right, PACKED_CORNER_SCALAR_BYTES);
+    int cid = id % P_DIM;
+    MPI_Comm_split(MPI_COMM_WORLD, cid, id, &col_comm);
+    
+    FftBuffers fft_buffers;
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&fft_buffers.host_buf0, LOCAL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&fft_buffers.host_buf1, LOCAL_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
+    init_host(rid, cid, fft_buffers.host_buf0);
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&fft_buffers.device_buf0, LOCAL_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&fft_buffers.device_buf1, LOCAL_COMPLEX_BYTES));
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(fft_buffers.device_buf0, fft_buffers.host_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(fft_buffers.device_buf1, fft_buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
 
-    cudaMemcpy(device_in, host_in, LOCAL_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_out, host_out, LOCAL_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_above, host_packed_above, PACKED_ROW_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_below, host_packed_below, PACKED_ROW_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_left, host_packed_left, PACKED_COL_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_right, host_packed_right, PACKED_COL_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_above_left, host_packed_above_left, PACKED_CORNER_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_above_right, host_packed_above_right, PACKED_CORNER_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_below_left, host_packed_below_left, PACKED_CORNER_SCALAR_BYTES, cudaMemcpyHostToDevice);
-    cudaMemcpy(device_packed_below_right, host_packed_below_right, PACKED_CORNER_SCALAR_BYTES, cudaMemcpyHostToDevice);
+    LaplaceBuffers laplace_buffers;
+    init_laplace_buffers(laplace_buffers);
 
-    laplace<<<VEC_TOTAL, VEC>>>(device_in, device_out,
-                                rid, cid,
-                                device_packed_above, device_packed_below,
-                                device_packed_left, device_packed_right,
-                                device_packed_above_left, device_packed_above_right,
-                                device_packed_below_left, device_packed_below_right);
+    pack_laplace<<<LOCAL_DIM, LOCAL_DIM>>>(fft_buffers.device_buf0, laplace_buffers);
     cudaDeviceSynchronize();
 
-    cudaMemcpy(host_out, device_out, LOCAL_SCALAR_BYTES, cudaMemcpyDeviceToHost);
+    communicate_laplace(laplace_buffers, row_comm, col_comm, rid, cid);
+    MPI_Barrier(MPI_COMM_WORLD);
+    
+    laplace<<<VEC_TOTAL, VEC>>>(fft_buffers.device_buf0, fft_buffers.device_buf1, laplace_buffers, rid, cid);
+    cudaDeviceSynchronize();
+
+    cudaMemcpy(fft_buffers.host_buf1, fft_buffers.device_buf1, LOCAL_COMPLEX_BYTES, cudaMemcpyDeviceToHost);
 
     std::cout << "Host out" << std::endl;
     for (int i = 0; i < LOCAL_DIM; i++) {
         for (int j = 0; j < LOCAL_DIM; j++) {
-            std::cout << host_out[i * LOCAL_DIM + j] << " ";
+            std::cout << fft_buffers.host_buf1[i * LOCAL_DIM + j].x << " ";
         }
         std::cout << std::endl;
     }
 
-    free(host_in);
-    free(host_out);
-    free(host_packed_above);
-    free(host_packed_below);
-    free(host_packed_left);
-    free(host_packed_right);
-    free(host_packed_above_left);
-    free(host_packed_above_right);
-    free(host_packed_below_left);
-    free(host_packed_below_right);
-    cudaFree(device_in);
-    cudaFree(device_out);
-    cudaFree(device_packed_above);
-    cudaFree(device_packed_below);
-    cudaFree(device_packed_left);
-    cudaFree(device_packed_right);
-    cudaFree(device_packed_above_left);
-    cudaFree(device_packed_above_right);
-    cudaFree(device_packed_below_left);
-    cudaFree(device_packed_below_right);
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(fft_buffers.host_buf0));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(fft_buffers.host_buf1));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(fft_buffers.device_buf0));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(fft_buffers.device_buf1));
+    destroy_laplace_buffers(laplace_buffers);
+
+    MPI_Finalize();
 }
