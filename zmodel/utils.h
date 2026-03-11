@@ -26,10 +26,10 @@ using Vector = std::vector<T>;
 
 // NOTE: these macros can be set on the commandline using: -UB_DIM -DB_DIM=8
 #ifndef N_DIM
-    #define N_DIM (16)
+    #define N_DIM (64)
 #endif
 #ifndef B_DIM
-    #define B_DIM (2)
+    #define B_DIM (4)
 #endif
 #ifndef P_DIM
     // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors
@@ -87,6 +87,10 @@ __host__ __device__ static inline Complex& operator-=(Complex& a, const Complex&
     return a;
 }
 
+__host__ __device__ static inline Complex operator*(const Complex& a, const Complex& b) {
+    return {a.x * b.x - a.y * b.y, a.x * b.y + a.y * b.x};
+}
+
 /******************** 2D Init ********************/
 
 template<typename T>
@@ -120,50 +124,6 @@ inline void init_host(int rid, int cid, T *host_in) {
                 int row = i * LOCAL_DIM;
                 host_in[row + (j * (LOCAL_DIM/B_DIM))+ jj] = init[row + j + (jj * B_DIM)];
             }
-        }
-    }
-
-    free(init);
-}
-
-inline void print_block_cyclic(Complex *host_in) {
-    Complex *init = (Complex*)malloc(LOCAL_COMPLEX_BYTES);
-
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < B_DIM; j++) {
-            for (int jj = 0; jj < LOCAL_DIM/B_DIM; jj++) {
-                int row = i * LOCAL_DIM;
-                init[row + j + (jj * B_DIM)] = host_in[row + (j * (LOCAL_DIM/B_DIM))+ jj];
-            }
-        }
-    }
-
-    std::cout << "Block Cyclic" << std::endl;
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < LOCAL_DIM; j++) {
-            std::cout << "(" << init[i * LOCAL_DIM + j].x << "," << init[i * LOCAL_DIM + j].y << ") ";
-        }
-        std::cout << std::endl;
-    }
-
-    free(init);
-}
-
-inline void store_block_cyclic(Complex *host_in) {
-    Complex *init = (Complex*)malloc(LOCAL_COMPLEX_BYTES);
-
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < B_DIM; j++) {
-            for (int jj = 0; jj < LOCAL_DIM/B_DIM; jj++) {
-                int row = i * LOCAL_DIM;
-                init[row + j + (jj * B_DIM)] = host_in[row + (j * (LOCAL_DIM/B_DIM))+ jj];
-            }
-        }
-    }
-
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < LOCAL_DIM; j++) {
-            host_in[i * LOCAL_DIM + j] = init[i * LOCAL_DIM + j];
         }
     }
 
