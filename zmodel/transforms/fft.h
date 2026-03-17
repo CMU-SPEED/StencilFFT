@@ -11,14 +11,18 @@ struct FftBuffers {
     Complex *host_buf1;
     Complex *host_forward_twiddles0; 
     Complex *host_forward_twiddles1; 
+    Complex *host_forward_twiddles2;
     Complex *host_inverse_twiddles0;
     Complex *host_inverse_twiddles1;
+    Complex *host_inverse_twiddles2;
     Complex *device_buf0;
     Complex *device_buf1;
     Complex *device_forward_twiddles0; 
     Complex *device_forward_twiddles1; 
+    Complex *device_forward_twiddles2;
     Complex *device_inverse_twiddles0; 
     Complex *device_inverse_twiddles1;
+    Complex *device_inverse_twiddles2;
 };
 
 template<bool do_compute>
@@ -30,6 +34,14 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                  int id, Complex scale, FftHostPlans& host_plans);
 
 void test_fft();
+
+template<bool do_compute>
+void forward_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm, MPI_Comm *dep_comm,
+                    int id, FftHostPlans& host_plans, FftdxFft1Ctx& ctx1);
+
+template<bool do_compute>
+void inverse_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm, MPI_Comm *dep_comm,
+                    int id, Complex scale, FftHostPlans& host_plans);
 
 void test_fft_3d();
 

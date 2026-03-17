@@ -29,6 +29,8 @@ struct FftdxFft1Ctx {
     size_t shmem;
 };
 
+/******************** 2D Plans ********************/
+
 inline void init_fftdx_fft1(FftdxFft1Ctx& ctx1) {
     ctx1.block  = FftdxFft1Ctx::FFT::block_dim;
     ctx1.grid   = dim3(LOCAL_DIM, (FftdxFft1Ctx::VEC_SPLIT + FftdxFft1Ctx::FFT::ffts_per_block - 1) /
@@ -84,5 +86,60 @@ __global__ void fft1_kernel(const Complex* __restrict__ in, Complex* __restrict_
     }
 }
 
+/******************** 3D Plans ********************/
+
+inline void init_fftdx_fft1_3d(FftdxFft1Ctx& ctx1) {
+    ctx1.block  = FftdxFft1Ctx::FFT::block_dim;
+    ctx1.grid   = dim3(LOCAL_DIM * LOCAL_DIM, (FftdxFft1Ctx::VEC_SPLIT + FftdxFft1Ctx::FFT::ffts_per_block - 1) /
+                               FftdxFft1Ctx::FFT::ffts_per_block);
+    ctx1.shmem  = FftdxFft1Ctx::FFT::shared_memory_size;
+
+    cudaError_t err = cudaSuccess;
+    ctx1.ws = cufftdx::make_workspace<typename FftdxFft1Ctx::FFT>(err);
+    if (err != cudaSuccess) std::abort();
+}
+
+template<class FFT, int VEC_SPLIT>
+__global__ void fft1_3d_kernel(const Complex* __restrict__ in, Complex* __restrict__ out,
+                               typename FFT::workspace_type workspace) {
+    using complex_type = typename FFT::value_type;
+
+    const complex_type* in_c  = reinterpret_cast<const complex_type*>(in);
+    complex_type*       out_c = reinterpret_cast<complex_type*>(out);
+
+    // blockIdx.x ranges over LOCAL_DIM * LOCAL_DIM (depth * row)
+    const unsigned int row = blockIdx.x;
+
+    const unsigned int t = blockIdx.y * FFT::ffts_per_block + threadIdx.y;
+    if (t >= (unsigned) VEC_SPLIT) return;
+
+    constexpr unsigned int FFT_SIZE = cufftdx::size_of<FFT>::value;
+
+    unsigned int index = row * LOCAL_DIM + t + threadIdx.x * VEC_SPLIT;
+    const unsigned int stride = FFT::stride * VEC_SPLIT;
+
+    complex_type thread_data[FFT::storage_size];
+
+    extern __shared__ __align__(alignof(float4)) complex_type shared_mem[];
+
+    #pragma unroll
+    for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+        if ((i * FFT::stride + threadIdx.x) < FFT_SIZE) {
+            thread_data[i] = in_c[index];
+            index += stride;
+        }
+    }
+
+    FFT().execute(thread_data, shared_mem, workspace);
+
+    index = row * LOCAL_DIM + t + threadIdx.x * VEC_SPLIT;
+    #pragma unroll
+    for (unsigned int i = 0; i < FFT::elements_per_thread; i++) {
+        if ((i * FFT::stride + threadIdx.x) < FFT_SIZE) {
+            out_c[index] = thread_data[i];
+            index += stride;
+        }
+    }
+}
 
 #endif // __ZMODEL__FFT__DEVICE__PLANS__

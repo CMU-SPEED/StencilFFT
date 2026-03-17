@@ -5,6 +5,8 @@
 
 /******************** MACROS & Function Declarations ********************/
 
+#define COMM_SIZE_2D ((LOCAL_DIM*LOCAL_DIM)/P_DIM)
+
 #ifdef __PRINT__DETAILED__TIMING__
     #define TIME_MPI_MAX_NS(TAG, ID, ...) do { \
         MPI_Barrier(MPI_COMM_WORLD); \
@@ -134,7 +136,7 @@ __global__ void placeholder(Complex *device_in, Complex *device_out) {
 
 /******************** Forward ********************/
 
-__global__ void pack_forward_fft0(Complex *device_in, Complex *device_out) {
+__global__ void pack_forward_fft(Complex *device_in, Complex *device_out) {
     const int row = blockIdx.x / VEC_COL;
     const int col = blockIdx.x % VEC_COL;
     const int in_offset = (row * LOCAL_DIM) + (col * VEC);
@@ -159,7 +161,7 @@ __global__ void pack_forward_fft0(Complex *device_in, Complex *device_out) {
 }
 
 template<bool do_compute>
-__global__ void pack_forward_fft1(Complex *device_in, Complex *device_out, Complex *forward_twiddles) {
+__global__ void unpack_forward_fft(Complex *device_in, Complex *device_out, Complex *forward_twiddles) {
     const int split_size = LOCAL_DIM / P_DIM;                // The size of the split
 
     const int index_in_row_split = blockIdx.x % split_size;
@@ -213,26 +215,26 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     );
 
     TIME_MPI_MAX_NS("PACK0", id,
-        pack_forward_fft0<<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0);
+        pack_forward_fft<<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0);
         DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
     );
 
     TIME_MPI_MAX_NS("COMMS0", id,
         #ifdef __GPU__AWARE__MPI__
             MPI_Alltoall(buffers.device_buf0,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         buffers.device_buf1,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         *row_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         buffers.host_buf1,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         *row_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
@@ -240,7 +242,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     );
 
     TIME_MPI_MAX_NS("PACK1", id,
-        pack_forward_fft1<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_forward_twiddles0);
+        unpack_forward_fft<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_forward_twiddles0);
         DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
     );
 
@@ -277,26 +279,26 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     );
 
     TIME_MPI_MAX_NS("PACK2", id,
-        pack_forward_fft0<<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0);
+        pack_forward_fft<<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0);
         DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
     );
 
     TIME_MPI_MAX_NS("COMMS1", id,
         #ifdef __GPU__AWARE__MPI__
             MPI_Alltoall(buffers.device_buf0,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         buffers.device_buf1,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         *col_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         buffers.host_buf1,
-                        (LOCAL_DIM*LOCAL_DIM)/P_DIM,
+                        COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
                         *col_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
@@ -304,7 +306,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     );
 
     TIME_MPI_MAX_NS("PACK3", id,
-        pack_forward_fft1<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_forward_twiddles1);
+        unpack_forward_fft<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_forward_twiddles1);
         DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
     );
 
@@ -340,7 +342,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
 /******************** Inverse ********************/
 
 template<bool do_compute>
-__global__ void pack_inverse_fft0(Complex *device_in, Complex *device_out, Complex scale) {
+__global__ void pack_inverse_fft(Complex *device_in, Complex *device_out, Complex scale) {
     const int row = blockIdx.x / VEC_COL;
     const int col = blockIdx.x % VEC_COL;
     const int in_offset = (row * LOCAL_DIM) + (col * VEC);
@@ -362,14 +364,14 @@ __global__ void pack_inverse_fft0(Complex *device_in, Complex *device_out, Compl
     const int out_offset = slab_offset + (out_row * LOCAL_DIM) + (out_col * vec_split);
 
     if constexpr (do_compute) {
-        device_out[in_offset + vec_index] = DEVICE_FFT_DOUBLECOMPLEX_MUL(device_in[out_offset + index_in_split], scale);
+        device_out[in_offset + vec_index] = scale * device_in[out_offset + index_in_split];
     } else {
         device_out[in_offset + vec_index] = device_in[out_offset + index_in_split];
     }
 }
 
 template<bool do_compute>
-__global__ void pack_inverse_fft1(Complex *device_in, Complex *device_out, Complex *inverse_twiddles) {
+__global__ void unpack_inverse_fft(Complex *device_in, Complex *device_out, Complex *inverse_twiddles) {
     const int split_size = LOCAL_DIM / P_DIM;                // The size of the split
 
     const int index_in_row_split = blockIdx.x % split_size;
@@ -426,7 +428,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
         placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf0, buffers.device_buf1);
     }
 
-    pack_inverse_fft1<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_inverse_twiddles1);
+    unpack_inverse_fft<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_inverse_twiddles1);
     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     #ifdef __GPU__AWARE__MPI__
@@ -449,7 +451,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
-    pack_inverse_fft0<do_compute><<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0, unity);
+    pack_inverse_fft<do_compute><<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0, unity);
     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     if constexpr (do_compute) {
@@ -471,7 +473,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
         placeholder<<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf0, buffers.device_buf1);
     }
 
-    pack_inverse_fft1<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_inverse_twiddles0);
+    unpack_inverse_fft<do_compute><<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf1, buffers.device_buf0, buffers.device_inverse_twiddles0);
     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     #ifdef __GPU__AWARE__MPI__
@@ -494,7 +496,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
-    pack_inverse_fft0<do_compute><<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0, scale);
+    pack_inverse_fft<do_compute><<<VEC_TOTAL, VEC>>>(buffers.device_buf1, buffers.device_buf0, scale);
     DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
 
     if constexpr (do_compute) {
@@ -569,7 +571,9 @@ void test_fft() {
     init_plans(host_plans);
 
     FftdxFft1Ctx ctx1;
-    init_fftdx_fft1(ctx1);
+    #ifdef __USE__FFTDX__
+        init_fftdx_fft1(ctx1);
+    #endif
 
     FftBuffers buffers;
     init_buffers<include_inverse>(buffers, rid, cid);
@@ -588,16 +592,16 @@ void test_fft() {
         }
     #endif
 
-    // Used to scale the inverse fft
-    double s = 1.0 / (double(N_DIM) * double(N_DIM));
-    Complex scale = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(s, 0.0);
-
     for (int i = 0; i < RUNS; i++) {
         forward_fft<do_compute>(buffers, &row_comm, &col_comm, id, host_plans, ctx1);
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
     #ifdef __ZMODEL__INCLUDE__INVERSE__
+        double s = 1.0 / (double(N_DIM) * double(N_DIM));
+        Complex scale = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(s, 0.0);
+
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.device_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_DEVICE));
         for (int i = 0; i < RUNS; i++) {
             inverse_fft<do_compute>(buffers, &row_comm, &col_comm, id, scale, host_plans);
         }
