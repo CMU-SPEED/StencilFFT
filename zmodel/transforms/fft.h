@@ -25,6 +25,8 @@ struct FftBuffers {
     Complex *device_inverse_twiddles2;
 };
 
+/******************** 2D ********************/
+
 template<bool include_inverse>
 void init_buffers(FftBuffers& buffers, int rid, int cid);
 
@@ -40,6 +42,8 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm,
                  int id, Complex scale, FftHostPlans& host_plans);
 
 void test_fft();
+
+/******************** 3D ********************/
 
 template<bool include_inverse>
 void init_buffers_3d(FftBuffers& buffers, int rid, int cid, int did);

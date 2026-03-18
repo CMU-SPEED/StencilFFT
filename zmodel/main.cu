@@ -105,6 +105,7 @@ int main(void) {
     // test_fft();
     // test_fft_3d();
     // test_laplace();
-    example();
+    test_laplace_3d();
+    // example();
     return 0;
 }

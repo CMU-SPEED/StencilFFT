@@ -21,8 +21,8 @@ zmodel/transforms/fft3d.cu zmodel/stencils/laplace3d.cu
 zmodel:
 	nvcc -ccbin=mpicxx -std=c++17 -O3 -DCUFFTDX_DISABLE_CUTLASS_DEPENDENCY -I$(CUDA_HOME)/include \
 	$(FFTDX_INCLUDE) $(ZMODEL_FILES) -o zmodel.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
-	mpiexec -n 4 ./zmodel.x
-# 	mpiexec -n 8 ./zmodel.x
+# 	mpiexec -n 4 ./zmodel.x
+	mpiexec -n 8 ./zmodel.x
 # Uncomment and swap in this line if you want to run the code on multple machines
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 4 ./zmodel.x
 

@@ -55,7 +55,6 @@ using Vector = std::vector<T>;
 #define LOCAL_SCALAR_BYTES (LOCAL_DIM*LOCAL_DIM*sizeof(Scalar))
 #define PACKED_ROW_SCALAR_BYTES (LOCAL_DIM*(LOCAL_DIM/B_DIM)*sizeof(Scalar))
 #define PACKED_COL_SCALAR_BYTES (LOCAL_DIM*VEC*sizeof(Scalar))
-#define PACKED_CORNER_SCALAR_BYTES ((LOCAL_DIM/B_DIM)*VEC*sizeof(Scalar))
 
 // This is the size of the vector the stencil will be batched with
 #define VEC (LOCAL_DIM/B_DIM)
@@ -68,6 +67,8 @@ using Vector = std::vector<T>;
 /******************** 3D MACROS ********************/
 
 #define LOCAL_COMPLEX_BYTES_3D (LOCAL_DIM*LOCAL_DIM*LOCAL_DIM*sizeof(Complex))
+#define PACKED_FACE_COMPLEX_3D (LOCAL_DIM * PACKED_ROW_COMPLEX)
+#define PACKED_FACE_COMPLEX_BYTES_3D (PACKED_FACE_COMPLEX_3D * sizeof(Complex))
 
 /******************** Operators ********************/
 
