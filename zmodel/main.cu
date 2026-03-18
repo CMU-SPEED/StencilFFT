@@ -34,7 +34,7 @@ void example(void) {
     FftHostPlans host_plans;
     init_plans(host_plans);
 
-    // Toggle this Macro to enable fast device side kernel for plan1
+    // Toggle this Macro to enable fast device side kernel for plan1 (need cufftdx installed)
     FftdxFft1Ctx ctx1;
     #ifdef __USE__FFTDX__
         init_fftdx_fft1(ctx1);
@@ -42,6 +42,10 @@ void example(void) {
 
     FftBuffers buffers;
     init_buffers<include_inverse>(buffers, rid, cid);
+
+    // This loads test data into the host, replace this with the hdf5 version in utils.cu
+    init_host(rid, cid, buffers.host_buf0);
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.host_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
 
     // Laplace Routine
     pack_laplace<<<LOCAL_DIM, LOCAL_DIM>>>(buffers.device_buf0, laplace_buffers);
@@ -53,10 +57,18 @@ void example(void) {
     laplace<<<VEC_TOTAL, VEC>>>(buffers.device_buf0, buffers.device_buf1, laplace_buffers, rid, cid);
     cudaDeviceSynchronize();
 
-    // FIXME: Copy result back to buf0 because FFT uses this as input
+    // Copy result back to buf0 because FFT required buf0 to be input
+    // This can be avoided by swapping the pointers but this is done for clarity
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.device_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_DEVICE));
 
     forward_fft<do_compute>(buffers, row_comm, col_comm, id, host_plans, ctx1);
+
+    // The distributed FFT permutes the output relative to a standard DFT.
+    // reciprocal_to_global maps a local position in the FFT output to the
+    // corresponding global frequency index: buf1[local_row * L + local_col]
+    // on processor (rid, cid) holds the same value as numpy.fft.fft2(data)[ky][kx].
+    // int ky, kx;
+    // reciprocal_to_global(rid, cid, local_row, local_col, ky, kx);
 
     // FFT uses buf1 as output.  IFFT uses buf0 as input
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.device_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_DEVICE));

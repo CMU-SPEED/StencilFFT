@@ -91,7 +91,6 @@ void init_buffers_3d(FftBuffers& buffers, int rid, int cid, int did) {
         DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&buffers.device_inverse_twiddles2, LOCAL_COMPLEX_BYTES_3D));
     }
 
-    init_host_3d(rid, cid, did, buffers.host_buf0);
     init_forward_twiddles_3d(buffers.host_forward_twiddles0, cid);
     init_forward_twiddles_3d(buffers.host_forward_twiddles1, rid);
     init_forward_twiddles_3d(buffers.host_forward_twiddles2, did);
@@ -101,8 +100,6 @@ void init_buffers_3d(FftBuffers& buffers, int rid, int cid, int did) {
         init_inverse_twiddles_3d(buffers.host_inverse_twiddles2, did);
     }
 
-    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.host_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
-    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_forward_twiddles0, buffers.host_forward_twiddles0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_forward_twiddles1, buffers.host_forward_twiddles1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_forward_twiddles2, buffers.host_forward_twiddles2, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
@@ -686,6 +683,8 @@ void test_fft_3d() {
 
     FftBuffers buffers;
     init_buffers_3d<include_inverse>(buffers, rid, cid, did);
+    init_host_3d(rid, cid, did, buffers.host_buf0);
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.host_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
 
     for (int i = 0; i < RUNS; i++) {
         forward_fft_3d<do_compute>(buffers, row_comm, col_comm, dep_comm, id, host_plans, ctx1);

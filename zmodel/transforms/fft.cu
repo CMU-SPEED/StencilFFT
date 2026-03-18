@@ -92,7 +92,6 @@ void init_buffers(FftBuffers& buffers, int rid, int cid) {
         DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&buffers.device_inverse_twiddles1, LOCAL_COMPLEX_BYTES));
     }
 
-    init_host(rid, cid, buffers.host_buf0);
     init_forward_twiddles(buffers.host_forward_twiddles0, cid);
     init_forward_twiddles(buffers.host_forward_twiddles1, rid);
     if constexpr (include_inverse) {
@@ -100,8 +99,6 @@ void init_buffers(FftBuffers& buffers, int rid, int cid) {
         init_inverse_twiddles(buffers.host_inverse_twiddles1, rid);
     }
 
-    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.host_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
-    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_forward_twiddles0, buffers.host_forward_twiddles0, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_forward_twiddles1, buffers.host_forward_twiddles1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     if constexpr (include_inverse) {
@@ -579,6 +576,8 @@ void test_fft() {
 
     FftBuffers buffers;
     init_buffers<include_inverse>(buffers, rid, cid);
+    init_host(rid, cid, buffers.host_buf0);
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.host_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
 
     #ifdef __PRINT__TWIDDLES__
         if (id == 0) {

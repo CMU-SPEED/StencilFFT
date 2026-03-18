@@ -12,6 +12,7 @@ zmodel/stencils/laplace.cu zmodel/stencils/dx.cu zmodel/stencils/dy.cu \
 zmodel/transforms/fft3d.cu zmodel/stencils/laplace3d.cu
 
 # Uncomment and set HDF5_HOME to enable HDF5 I/O (also uncomment __USE__HDF5__ in utils.h)
+# Need to have access to parallel hdf5 for this work
 #HDF5_HOME=/usr/local/hdf5
 #HDF5_FLAGS=-I$(HDF5_HOME)/include -L$(HDF5_HOME)/lib -lhdf5
 
