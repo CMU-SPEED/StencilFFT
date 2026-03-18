@@ -25,22 +25,34 @@ struct FftBuffers {
     Complex *device_inverse_twiddles2;
 };
 
+template<bool include_inverse>
+void init_buffers(FftBuffers& buffers, int rid, int cid);
+
+template<bool include_inverse>
+void destroy_buffers(FftBuffers& buffers);
+
 template<bool do_compute>
-void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
+void forward_fft(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm,
                  int id, FftHostPlans& host_plans, FftdxFft1Ctx& ctx1);
 
 template<bool do_compute>
-void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
+void inverse_fft(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm,
                  int id, Complex scale, FftHostPlans& host_plans);
 
 void test_fft();
 
+template<bool include_inverse>
+void init_buffers_3d(FftBuffers& buffers, int rid, int cid, int did);
+
+template<bool include_inverse>
+void destroy_buffers_3d(FftBuffers& buffers);
+
 template<bool do_compute>
-void forward_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm, MPI_Comm *dep_comm,
+void forward_fft_3d(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm, MPI_Comm& dep_comm,
                     int id, FftHostPlans& host_plans, FftdxFft1Ctx& ctx1);
 
 template<bool do_compute>
-void inverse_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm, MPI_Comm *dep_comm,
+void inverse_fft_3d(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm, MPI_Comm& dep_comm,
                     int id, Complex scale, FftHostPlans& host_plans);
 
 void test_fft_3d();

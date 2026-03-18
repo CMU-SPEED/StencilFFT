@@ -5,8 +5,6 @@
 
 /******************** MACROS & Function Declarations ********************/
 
-#define COMM_SIZE_2D ((LOCAL_DIM*LOCAL_DIM)/P_DIM)
-
 #ifdef __PRINT__DETAILED__TIMING__
     #define TIME_MPI_MAX_NS(TAG, ID, ...) do { \
         MPI_Barrier(MPI_COMM_WORLD); \
@@ -22,13 +20,17 @@
     #define TIME_MPI_MAX_NS(TAG, ID, ...) do { __VA_ARGS__ } while(0)
 #endif
 
-template void forward_fft<true>(FftBuffers&, MPI_Comm*, MPI_Comm*, int, FftHostPlans&, FftdxFft1Ctx&);
+#define COMM_SIZE_2D ((LOCAL_DIM*LOCAL_DIM)/P_DIM)
 
-template void forward_fft<false>(FftBuffers&, MPI_Comm*, MPI_Comm*, int, FftHostPlans&, FftdxFft1Ctx&);
+template void forward_fft<true>(FftBuffers&, MPI_Comm&, MPI_Comm&, int, FftHostPlans&, FftdxFft1Ctx&);
+template void forward_fft<false>(FftBuffers&, MPI_Comm&, MPI_Comm&, int, FftHostPlans&, FftdxFft1Ctx&);
+template void inverse_fft<true>(FftBuffers&, MPI_Comm&, MPI_Comm&, int, Complex, FftHostPlans&);
+template void inverse_fft<false>(FftBuffers&, MPI_Comm&, MPI_Comm&, int, Complex, FftHostPlans&);
 
-template void inverse_fft<true>(FftBuffers&, MPI_Comm*, MPI_Comm*, int, Complex, FftHostPlans&);
-
-template void inverse_fft<false>(FftBuffers&, MPI_Comm*, MPI_Comm*, int, Complex, FftHostPlans&);
+template void init_buffers<true>(FftBuffers&, int, int);
+template void init_buffers<false>(FftBuffers&, int, int);
+template void destroy_buffers<true>(FftBuffers&);
+template void destroy_buffers<false>(FftBuffers&);
 
 /******************** Init ********************/
 
@@ -198,7 +200,7 @@ __global__ void repack_transpose(Complex *device_in, Complex *device_out) {
  *   y-direction: Plan_A -> pack -> alltoall(col) -> unpack+twiddle -> Plan_B
  */
 template<bool do_compute>
-void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
+void forward_fft(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm,
                  int id, FftHostPlans& host_plans, FftdxFft1Ctx& ctx1) {
     #ifdef __PRINT__TIMING__
         MPI_Barrier(MPI_COMM_WORLD);
@@ -227,7 +229,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                         buffers.device_buf1,
                         COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
-                        *row_comm);
+                        row_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0,
@@ -236,7 +238,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                         buffers.host_buf1,
                         COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
-                        *row_comm);
+                        row_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
         #endif // __GPU__AWARE__MPI__
     );
@@ -291,7 +293,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                         buffers.device_buf1,
                         COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
-                        *col_comm);
+                        col_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0,
@@ -300,7 +302,7 @@ void forward_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                         buffers.host_buf1,
                         COMM_SIZE_2D,
                         MPI_C_DOUBLE_COMPLEX,
-                        *col_comm);
+                        col_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
         #endif // __GPU__AWARE__MPI__
     );
@@ -408,7 +410,7 @@ __global__ void inverse_repack_transpose(Complex *device_in, Complex *device_out
  *   x-direction: Plan_B^-1 -> inv_unpack+inv_twiddle -> alltoall(row) -> inv_pack+scale -> Plan_A^-1
  */
 template<bool do_compute>
-void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
+void inverse_fft(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm,
                  int id, Complex scale, FftHostPlans& host_plans) {
     #ifdef __PRINT__TIMING__
         MPI_Barrier(MPI_COMM_WORLD);
@@ -438,7 +440,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                     buffers.device_buf1,
                     (LOCAL_DIM*LOCAL_DIM)/P_DIM,
                     MPI_C_DOUBLE_COMPLEX,
-                    *col_comm);
+                    col_comm);
     #else
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
         MPI_Alltoall(buffers.host_buf0,
@@ -447,7 +449,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                     buffers.host_buf1,
                     (LOCAL_DIM*LOCAL_DIM)/P_DIM,
                     MPI_C_DOUBLE_COMPLEX,
-                    *col_comm);
+                    col_comm);
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
@@ -483,7 +485,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                     buffers.device_buf1,
                     (LOCAL_DIM*LOCAL_DIM)/P_DIM,
                     MPI_C_DOUBLE_COMPLEX,
-                    *row_comm);
+                    row_comm);
     #else
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
         MPI_Alltoall(buffers.host_buf0,
@@ -492,7 +494,7 @@ void inverse_fft(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
                     buffers.host_buf1,
                     (LOCAL_DIM*LOCAL_DIM)/P_DIM,
                     MPI_C_DOUBLE_COMPLEX,
-                    *row_comm);
+                    row_comm);
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
@@ -593,7 +595,7 @@ void test_fft() {
     #endif
 
     for (int i = 0; i < RUNS; i++) {
-        forward_fft<do_compute>(buffers, &row_comm, &col_comm, id, host_plans, ctx1);
+        forward_fft<do_compute>(buffers, row_comm, col_comm, id, host_plans, ctx1);
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
@@ -601,9 +603,9 @@ void test_fft() {
         double s = 1.0 / (double(N_DIM) * double(N_DIM));
         Complex scale = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(s, 0.0);
 
-        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.device_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_DEVICE));
+        DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.device_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_DEVICE));
         for (int i = 0; i < RUNS; i++) {
-            inverse_fft<do_compute>(buffers, &row_comm, &col_comm, id, scale, host_plans);
+            inverse_fft<do_compute>(buffers, row_comm, col_comm, id, scale, host_plans);
         }
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf1, buffers.device_buf1, LOCAL_COMPLEX_BYTES, MEM_COPY_DEVICE_TO_HOST));
     #else
@@ -611,17 +613,17 @@ void test_fft() {
     #endif // __ZMODEL__INCLUDE__INVERSE__
 
     #ifdef __PRINT__RESULTS__
-    MPI_Barrier(MPI_COMM_WORLD);
-    if (id == 0) {
-        std::cout << "Host out" << std::endl;
-        for (int i = 0; i < LOCAL_DIM; i++) {
-            for (int j = 0; j < LOCAL_DIM; j++) {
-                std::cout << buffers.host_buf1[i * LOCAL_DIM + j].x << " ";
-                // std::cout << "(" << buffers.host_buf1[i * LOCAL_DIM + j].x << ", " << buffers.host_buf1[i * LOCAL_DIM + j].y << ") ";
+        MPI_Barrier(MPI_COMM_WORLD);
+        if (id == 0) {
+            std::cout << "Host out" << std::endl;
+            for (int i = 0; i < LOCAL_DIM; i++) {
+                for (int j = 0; j < LOCAL_DIM; j++) {
+                    std::cout << buffers.host_buf1[i * LOCAL_DIM + j].x << " ";
+                    // std::cout << "(" << buffers.host_buf1[i * LOCAL_DIM + j].x << ", " << buffers.host_buf1[i * LOCAL_DIM + j].y << ") ";
+                }
+                std::cout << std::endl;
             }
-            std::cout << std::endl;
         }
-    }
     #endif
 
     destroy_plans(host_plans);

@@ -4,8 +4,6 @@
 
 /******************** MACROS & Function Declarations ********************/
 
-#define COMM_SIZE_3D ((LOCAL_DIM*LOCAL_DIM*LOCAL_DIM)/P_DIM)
-
 #ifdef __PRINT__DETAILED__TIMING__
     #define TIME_MPI_MAX_NS(TAG, ID, ...) do { \
         MPI_Barrier(MPI_COMM_WORLD); \
@@ -21,13 +19,17 @@
     #define TIME_MPI_MAX_NS(TAG, ID, ...) do { __VA_ARGS__ } while(0)
 #endif
 
-template void forward_fft_3d<true>(FftBuffers&, MPI_Comm*, MPI_Comm*, MPI_Comm*, int, FftHostPlans&, FftdxFft1Ctx&);
+#define COMM_SIZE_3D ((LOCAL_DIM*LOCAL_DIM*LOCAL_DIM)/P_DIM)
 
-template void forward_fft_3d<false>(FftBuffers&, MPI_Comm*, MPI_Comm*, MPI_Comm*, int, FftHostPlans&, FftdxFft1Ctx&);
+template void forward_fft_3d<true>(FftBuffers&, MPI_Comm&, MPI_Comm&, MPI_Comm&, int, FftHostPlans&, FftdxFft1Ctx&);
+template void forward_fft_3d<false>(FftBuffers&, MPI_Comm&, MPI_Comm&, MPI_Comm&, int, FftHostPlans&, FftdxFft1Ctx&);
+template void inverse_fft_3d<true>(FftBuffers&, MPI_Comm&, MPI_Comm&, MPI_Comm&, int, Complex, FftHostPlans&);
+template void inverse_fft_3d<false>(FftBuffers&, MPI_Comm&, MPI_Comm&, MPI_Comm&, int, Complex, FftHostPlans&);
 
-template void inverse_fft_3d<true>(FftBuffers&, MPI_Comm*, MPI_Comm*, MPI_Comm*, int, Complex, FftHostPlans&);
-
-template void inverse_fft_3d<false>(FftBuffers&, MPI_Comm*, MPI_Comm*, MPI_Comm*, int, Complex, FftHostPlans&);
+template void init_buffers_3d<true>(FftBuffers&, int, int, int);
+template void init_buffers_3d<false>(FftBuffers&, int, int, int);
+template void destroy_buffers_3d<true>(FftBuffers&);
+template void destroy_buffers_3d<false>(FftBuffers&);
 
 /******************** Init ********************/
 
@@ -233,7 +235,7 @@ __global__ void repack_transpose_yz_3d(Complex *device_in, Complex *device_out) 
  *   z-direction: Plan_A -> pack -> alltoall(dep) -> unpack+twiddle(did) -> Plan_B
  */
 template<bool do_compute>
-void forward_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm, MPI_Comm *dep_comm,
+void forward_fft_3d(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm, MPI_Comm& dep_comm,
                     int id, FftHostPlans& host_plans, FftdxFft1Ctx& ctx1) {
     #ifdef __PRINT__TIMING__
         MPI_Barrier(MPI_COMM_WORLD);
@@ -261,11 +263,11 @@ void forward_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     TIME_MPI_MAX_NS("COMMS0", id,
         #ifdef __GPU__AWARE__MPI__
             MPI_Alltoall(buffers.device_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                         buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *row_comm);
+                         buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, row_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                         buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *row_comm);
+                         buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, row_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
         #endif // __GPU__AWARE__MPI__
     );
@@ -315,11 +317,11 @@ void forward_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     TIME_MPI_MAX_NS("COMMS1", id,
         #ifdef __GPU__AWARE__MPI__
             MPI_Alltoall(buffers.device_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                         buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *col_comm);
+                         buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, col_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                         buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *col_comm);
+                         buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, col_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
         #endif // __GPU__AWARE__MPI__
     );
@@ -369,11 +371,11 @@ void forward_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
     TIME_MPI_MAX_NS("COMMS2", id,
         #ifdef __GPU__AWARE__MPI__
             MPI_Alltoall(buffers.device_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                         buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *dep_comm);
+                         buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, dep_comm);
         #else
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
             MPI_Alltoall(buffers.host_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                         buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *dep_comm);
+                         buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, dep_comm);
             DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
         #endif // __GPU__AWARE__MPI__
     );
@@ -507,7 +509,7 @@ __global__ void inverse_repack_transpose_yz_3d(Complex *device_in, Complex *devi
  *   x-direction: Plan_B^-1 -> inv_unpack+inv_twiddle(cid) -> alltoall(row) -> inv_pack+scale -> Plan_A^-1
  */
 template<bool do_compute>
-void inverse_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm, MPI_Comm *dep_comm,
+void inverse_fft_3d(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm, MPI_Comm& dep_comm,
                     int id, Complex scale, FftHostPlans& host_plans) {
     #ifdef __PRINT__TIMING__
         MPI_Barrier(MPI_COMM_WORLD);
@@ -535,11 +537,11 @@ void inverse_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
 
     #ifdef __GPU__AWARE__MPI__
         MPI_Alltoall(buffers.device_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                     buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *dep_comm);
+                     buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, dep_comm);
     #else
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
         MPI_Alltoall(buffers.host_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                     buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *dep_comm);
+                     buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, dep_comm);
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
@@ -570,11 +572,11 @@ void inverse_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
 
     #ifdef __GPU__AWARE__MPI__
         MPI_Alltoall(buffers.device_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                     buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *col_comm);
+                     buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, col_comm);
     #else
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
         MPI_Alltoall(buffers.host_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                     buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *col_comm);
+                     buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, col_comm);
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
@@ -605,11 +607,11 @@ void inverse_fft_3d(FftBuffers& buffers, MPI_Comm *row_comm, MPI_Comm *col_comm,
 
     #ifdef __GPU__AWARE__MPI__
         MPI_Alltoall(buffers.device_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                     buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *row_comm);
+                     buffers.device_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, row_comm);
     #else
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf0, buffers.device_buf0, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
         MPI_Alltoall(buffers.host_buf0, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX,
-                     buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, *row_comm);
+                     buffers.host_buf1, COMM_SIZE_3D, MPI_C_DOUBLE_COMPLEX, row_comm);
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf1, buffers.host_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_HOST_TO_DEVICE));
     #endif // __GPU__AWARE__MPI__
 
@@ -686,7 +688,7 @@ void test_fft_3d() {
     init_buffers_3d<include_inverse>(buffers, rid, cid, did);
 
     for (int i = 0; i < RUNS; i++) {
-        forward_fft_3d<do_compute>(buffers, &row_comm, &col_comm, &dep_comm, id, host_plans, ctx1);
+        forward_fft_3d<do_compute>(buffers, row_comm, col_comm, dep_comm, id, host_plans, ctx1);
         MPI_Barrier(MPI_COMM_WORLD);
     }
 
@@ -696,7 +698,7 @@ void test_fft_3d() {
 
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.device_buf0, buffers.device_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_DEVICE));
         for (int i = 0; i < RUNS; i++) {
-            inverse_fft_3d<do_compute>(buffers, &row_comm, &col_comm, &dep_comm, id, scale, host_plans);
+            inverse_fft_3d<do_compute>(buffers, row_comm, col_comm, dep_comm, id, scale, host_plans);
         }
         DEVICE_RT_SAFE_CALL(DEVICE_MEM_COPY(buffers.host_buf1, buffers.device_buf1, LOCAL_COMPLEX_BYTES_3D, MEM_COPY_DEVICE_TO_HOST));
     #else

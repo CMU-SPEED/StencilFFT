@@ -2,6 +2,9 @@
 #define __ZMODEL__FFT__DEVICE__PLANS__
 
 #include "../utils.h"
+
+#ifdef __USE__FFTDX__
+
 #include <cufftdx.hpp>
 using namespace cufftdx;
 
@@ -141,5 +144,15 @@ __global__ void fft1_3d_kernel(const Complex* __restrict__ in, Complex* __restri
         }
     }
 }
+
+#else // !__USE__FFTDX__
+
+// Stub for when cuFFTDx is disabled
+struct FftdxFft1Ctx {
+    dim3 block, grid;
+    size_t shmem;
+};
+
+#endif // __USE__FFTDX__
 
 #endif // __ZMODEL__FFT__DEVICE__PLANS__

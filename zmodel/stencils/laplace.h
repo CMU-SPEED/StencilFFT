@@ -29,4 +29,10 @@ void init_laplace_buffers(LaplaceBuffers& laplace_buffers);
 
 void destroy_laplace_buffers(LaplaceBuffers& laplace_buffers);
 
+__global__ void laplace(Complex *device_in, Complex *device_out, LaplaceBuffers laplace_buffers, int rid, int cid);
+
+__global__ void pack_laplace(Complex *device_in, LaplaceBuffers laplace_buffers);          
+
+void communicate_laplace(LaplaceBuffers& laplace_buffers, MPI_Comm& row_comm, MPI_Comm& col_comm, int rid, int cid);
+
 #endif // __ZMODEL__LAPLACE__ 
