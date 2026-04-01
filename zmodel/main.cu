@@ -103,9 +103,9 @@ void example(void) {
 
 int main(void) {
     // test_fft();
-    test_fft_3d();
+    // test_fft_3d();
     // test_laplace();
-    // test_laplace_3d();
+    test_laplace_3d();
     // example();
     // benchmark_kernels_3d();
     return 0;

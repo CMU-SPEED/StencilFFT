@@ -2,7 +2,7 @@
 .vscode/*
 *.py
 *.txt
-!zmodel.py
+zmodel.py
 !heffte*.txt
 !fft*.txt
 !new_plot.py

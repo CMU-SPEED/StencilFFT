@@ -1,6 +1,27 @@
 #include <iostream>
 #include "laplace.h"
 #include "../transforms/fft.h"
+#include <chrono>
+
+/******************** MACROS ********************/
+
+#ifdef __PRINT__DETAILED__TIMING__
+    #define TIME_MPI_MAX_NS(TAG, ID, ...) do { \
+        MPI_Barrier(MPI_COMM_WORLD); \
+        auto _t0 = std::chrono::high_resolution_clock::now(); \
+        __VA_ARGS__ \
+        auto _t1 = std::chrono::high_resolution_clock::now(); \
+        long long _ns = std::chrono::duration_cast<std::chrono::nanoseconds>(_t1 - _t0).count(); \
+        long long _max = 0; \
+        MPI_Reduce(&_ns, &_max, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD); \
+        if ((ID) == 0) std::cout << (TAG) << " " << _max << " ns\n"; \
+    } while(0)
+#else
+    #define TIME_MPI_MAX_NS(TAG, ID, ...) do { __VA_ARGS__ } while(0)
+#endif
+
+/******************** Init ********************/
+
 
 void init_laplace_buffers(LaplaceBuffers& laplace_buffers) {
     DEVICE_RT_SAFE_CALL(DEVICE_HOST_ALLOC((void**)&laplace_buffers.host_send_above, PACKED_ROW_COMPLEX_BYTES, DEVICE_HOST_ALLOC_DEFAULT));
@@ -41,6 +62,7 @@ void destroy_laplace_buffers(LaplaceBuffers& laplace_buffers) {
     DEVICE_RT_SAFE_CALL(DEVICE_FREE(laplace_buffers.device_recv_right));
 } 
 
+/******************** Laplace ********************/
 
 /**
  * 2D matrix
@@ -233,14 +255,38 @@ void communicate_laplace(LaplaceBuffers& laplace_buffers,
     #endif
 }
 
+/******************** Test ********************/
 
 void test_laplace() {
     MPI_Init(NULL, NULL);
+
+    #ifdef __GPU__SET__
+        MPI_Comm local_comm;
+        MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &local_comm);
+
+        int local_rank;
+        MPI_Comm_rank(local_comm, &local_rank);
+
+        DEVICE_RT_SAFE_CALL(DEVICE_SET(local_rank));
+
+        int num_devices;
+        DEVICE_COUNT(&num_devices);
+
+        for (int i = 0; i < num_devices; i++) {
+            if (i != local_rank) {
+                DEVICE_ENABLE_PA(i, 0);
+            }
+        }
+    #endif // __GPU__SET__
 
     int P, id;
     P = P_DIM * P_DIM;
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
     MPI_Comm_size(MPI_COMM_WORLD, &P);
+
+    #ifdef __PRINT__SANITY__
+        if (id == 0) std::cout << "N_DIM: " << N_DIM << ", B_DIM: " << B_DIM << " P_DIM: " << P_DIM << std::endl;
+    #endif
 
     MPI_Comm row_comm, col_comm;
 
@@ -262,24 +308,49 @@ void test_laplace() {
     LaplaceBuffers laplace_buffers;
     init_laplace_buffers(laplace_buffers);
 
-    pack_laplace<<<LOCAL_DIM, LOCAL_DIM>>>(fft_buffers.device_buf0, laplace_buffers);
-    cudaDeviceSynchronize();
+    for (int i = 0; i < RUNS; i++) {
+        #ifdef __PRINT__TIMING__
+            MPI_Barrier(MPI_COMM_WORLD);
+            auto start = std::chrono::high_resolution_clock::now();
+        #endif // __PRINT__TIMING__
 
-    communicate_laplace(laplace_buffers, row_comm, col_comm, rid, cid);
-    MPI_Barrier(MPI_COMM_WORLD);
+        TIME_MPI_MAX_NS("PACK", id,
+            pack_laplace<<<LOCAL_DIM, LOCAL_DIM>>>(fft_buffers.device_buf0, laplace_buffers);
+            cudaDeviceSynchronize();
+        );
+
+        TIME_MPI_MAX_NS("COMMS", id,
+            communicate_laplace(laplace_buffers, row_comm, col_comm, rid, cid);
+            MPI_Barrier(MPI_COMM_WORLD);
+        );
     
-    laplace<<<VEC_TOTAL, VEC>>>(fft_buffers.device_buf0, fft_buffers.device_buf1, laplace_buffers, rid, cid);
-    cudaDeviceSynchronize();
+        TIME_MPI_MAX_NS("KERNEL", id,
+            laplace<<<VEC_TOTAL, VEC>>>(fft_buffers.device_buf0, fft_buffers.device_buf1, laplace_buffers, rid, cid);
+            cudaDeviceSynchronize();
+        );
+
+        #ifdef __PRINT__TIMING__
+            MPI_Barrier(MPI_COMM_WORLD);
+            auto end = std::chrono::high_resolution_clock::now();
+            auto duration = std::chrono::duration_cast<std::chrono::nanoseconds>(end - start);
+            long long ns = duration.count();
+            long long max_time = 0;
+            MPI_Reduce(&ns, &max_time, 1, MPI_LONG_LONG, MPI_MAX, 0, MPI_COMM_WORLD);
+            if (id == 0) std::cout << "TOTAL " << max_time << " ns\n" << std::endl;
+        #endif // __PRINT__TIMING__
+    }
 
     cudaMemcpy(fft_buffers.host_buf1, fft_buffers.device_buf1, LOCAL_COMPLEX_BYTES, cudaMemcpyDeviceToHost);
 
-    std::cout << "Host out" << std::endl;
-    for (int i = 0; i < LOCAL_DIM; i++) {
-        for (int j = 0; j < LOCAL_DIM; j++) {
-            std::cout << fft_buffers.host_buf1[i * LOCAL_DIM + j].x << " ";
+    #ifdef __PRINT__RESULTS__
+        std::cout << "Host out" << std::endl;
+        for (int i = 0; i < LOCAL_DIM; i++) {
+            for (int j = 0; j < LOCAL_DIM; j++) {
+                std::cout << fft_buffers.host_buf1[i * LOCAL_DIM + j].x << " ";
+            }
+            std::cout << std::endl;
         }
-        std::cout << std::endl;
-    }
+    #endif
 
     DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(fft_buffers.host_buf0));
     DEVICE_RT_SAFE_CALL(DEVICE_FREE_HOST(fft_buffers.host_buf1));

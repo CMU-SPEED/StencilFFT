@@ -50,8 +50,12 @@ The code can be run without (FFTDX)[https://developer.nvidia.com/cufftdx-downloa
 
 The scripts `zmodel/run.sh` and `zmodel/run3d.sh` are written to perform parameter sweeps of the 2D FFT and the 3D FFT respectively on the CMU ECE number cluster.
 
-To run the code more generally you can just set the program you want to run in `zmodel/main.cu` and do `make run`
+To run the code more generally you can just set the program you want to run in `zmodel/main.cu` and do `make zmodel`
 
-# Stencils
+# Baseline Stencils
 
 TODO
+
+# Our Stencils
+
+The stencil code can be found in `zmodel/transforms/laplace.cu` and `zmodel/transforms/laplace3d.cu`.  These can be benchmarked by choosing their test function in `zmodel/main.cu` and the flags in `zmodel/utils.h`.  A parameter sweep can be done with the same run scripts as those used for our ffts.

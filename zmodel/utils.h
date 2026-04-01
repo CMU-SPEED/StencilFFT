@@ -14,7 +14,7 @@ using Vector = std::vector<T>;
 
 #define __PRINT__TIMING__
 #define __PRINT__DETAILED__TIMING__
-// #define __PRINT__RESULTS__
+#define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__
@@ -37,7 +37,7 @@ using Vector = std::vector<T>;
     #define P_DIM (2)
 #endif
 
-#define RUNS (1)
+#define RUNS (5)
 #define NUM_STREAMS (4)
 
 #define CUFFTDX_TARGET_SM 750

@@ -1,5 +1,6 @@
 This repository contains an implementation of the interleaved block cyclic format.
 
+NOTE: For information on how to benchmark see benchmark.md
 FIXME: This is out of date
 
 # How the data layout works

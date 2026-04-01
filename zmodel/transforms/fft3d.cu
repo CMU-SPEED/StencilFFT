@@ -649,6 +649,25 @@ void test_fft_3d() {
 
     MPI_Init(NULL, NULL);
 
+    #ifdef __GPU__SET__
+        MPI_Comm local_comm;
+        MPI_Comm_split_type(MPI_COMM_WORLD, MPI_COMM_TYPE_SHARED, 0, MPI_INFO_NULL, &local_comm);
+
+        int local_rank;
+        MPI_Comm_rank(local_comm, &local_rank);
+
+        DEVICE_RT_SAFE_CALL(DEVICE_SET(local_rank));
+
+        int num_devices;
+        DEVICE_COUNT(&num_devices);
+
+        for (int i = 0; i < num_devices; i++) {
+            if (i != local_rank) {
+                DEVICE_ENABLE_PA(i, 0);
+            }
+        }
+    #endif // __GPU__SET__
+
     int P, id;
     P = P_DIM * P_DIM * P_DIM;
     MPI_Comm_rank(MPI_COMM_WORLD, &id);
