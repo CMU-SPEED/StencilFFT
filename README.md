@@ -1,5 +1,7 @@
 This repository contains an implementation of the interleaved block cyclic format.
 
+FIXME: This is out of date
+
 # How the data layout works
 
 We start with a block cyclic distribution and then pack the ith element of all the blocks in a row together into vectors.  These vectors can be seen in Step 1 and is where we apply our stencils.  

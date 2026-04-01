@@ -16,15 +16,21 @@ zmodel/transforms/fft3d.cu zmodel/stencils/laplace3d.cu
 #HDF5_HOME=/usr/local/hdf5
 #HDF5_FLAGS=-I$(HDF5_HOME)/include -L$(HDF5_HOME)/lib -lhdf5
 
-.PHONY: zmodel
+.PHONY: zmodel build
 
 zmodel:
 	nvcc -ccbin=mpicxx -std=c++17 -O3 -DCUFFTDX_DISABLE_CUTLASS_DEPENDENCY -I$(CUDA_HOME)/include \
 	$(FFTDX_INCLUDE) $(ZMODEL_FILES) -o zmodel.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart
 # 	mpiexec -n 4 ./zmodel.x
 	mpiexec -n 8 ./zmodel.x
+# 	mpiexec -n 1 ./zmodel.x
 # Uncomment and swap in this line if you want to run the code on multple machines
 #mpiexec --mca btl_ofi_provider_exclude psm3 --hostfile hostname -n 4 ./zmodel.x
+
+build:
+	nvcc -ccbin=mpicxx -std=c++17 -O3 -I$(CUDA_HOME)/include \
+	$(ZMODEL_FILES) -o zmodel.x -L$(CUDA_HOME)/lib64 -lcufft -lcudart \
+	-UN_DIM -DN_DIM=$(N_DIM) -UB_DIM -DB_DIM=$(B_DIM) -UP_DIM -DP_DIM=$(P_DIM)
 
 measure_cuda_ab:
 	nvcc -ccbin=mpicxx measure/measure.cu -o measure_cuda.x
