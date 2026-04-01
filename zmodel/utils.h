@@ -14,14 +14,14 @@ using Vector = std::vector<T>;
 
 #define __PRINT__TIMING__
 #define __PRINT__DETAILED__TIMING__
-#define __PRINT__RESULTS__
+// #define __PRINT__RESULTS__
 // #define __PRINT__TWIDDLES__
 #define __PRINT__SANITY__
 #define __ZMODEL__COMPUTE__
 // #define __GPU__AWARE__MPI__
 // #define __GPU__SET__
 // #define __USE__FFTDX__
-#define  __ZMODEL__INCLUDE__INVERSE__
+// #define  __ZMODEL__INCLUDE__INVERSE__
 // #define __USE__HDF5__
 
 // NOTE: these macros can be set on the commandline using: -UB_DIM -DB_DIM=8
@@ -29,7 +29,7 @@ using Vector = std::vector<T>;
     #define N_DIM (16)
 #endif
 #ifndef B_DIM
-    #define B_DIM (2)
+    #define B_DIM (4)
 #endif
 #ifndef P_DIM
     // Number of processors in the rows or columns. ex: p = 2 --> 4 total processors

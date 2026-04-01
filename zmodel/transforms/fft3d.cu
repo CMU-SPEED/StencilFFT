@@ -659,6 +659,10 @@ void test_fft_3d() {
     rid = (id % (P_DIM * P_DIM)) / P_DIM;
     cid = (id % (P_DIM * P_DIM)) % P_DIM;
 
+    #ifdef __PRINT__SANITY__
+        if (id == 0) std::cout << "N_DIM: " << N_DIM << ", B_DIM: " << B_DIM << " P_DIM: " << P_DIM << std::endl;
+    #endif
+
     MPI_Comm row_comm, col_comm, dep_comm;
 
     // The processors in a dep_grp should all share the same rid and cid
@@ -725,4 +729,109 @@ void test_fft_3d() {
     destroy_buffers_3d<include_inverse>(buffers);
 
     MPI_Finalize();
+}
+
+/******************** Benchmark ********************/
+
+void benchmark_kernels_3d() {
+    Complex *device_buf0, *device_buf1, *device_twiddles;
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&device_buf0, LOCAL_COMPLEX_BYTES_3D));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&device_buf1, LOCAL_COMPLEX_BYTES_3D));
+    DEVICE_RT_SAFE_CALL(DEVICE_MALLOC((void**)&device_twiddles, LOCAL_COMPLEX_BYTES_3D));
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_SET(device_buf0, 0, LOCAL_COMPLEX_BYTES_3D));
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_SET(device_buf1, 0, LOCAL_COMPLEX_BYTES_3D));
+    DEVICE_RT_SAFE_CALL(DEVICE_MEM_SET(device_twiddles, 0, LOCAL_COMPLEX_BYTES_3D));
+
+    FftHostPlans host_plans;
+    init_plans_3d(host_plans);
+
+    #ifdef __USE__FFTDX__
+        FftdxFft1Ctx ctx1;
+        init_fftdx_fft1_3d(ctx1);
+    #endif
+
+    dim3 grid_pack(LOCAL_DIM, VEC_TOTAL);
+    dim3 grid_unpack(LOCAL_DIM, LOCAL_DIM);
+    dim3 grid_repack(LOCAL_DIM, LOCAL_DIM);
+
+    // Warm up
+    pack_forward_fft_3d<<<grid_pack, VEC>>>(device_buf0, device_buf1);
+    DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+
+    auto time_kernel = [](const char* name, int runs, auto kernel_fn) {
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+        auto t0 = std::chrono::high_resolution_clock::now();
+        for (int i = 0; i < runs; i++) {
+            kernel_fn();
+        }
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+        auto t1 = std::chrono::high_resolution_clock::now();
+        long long ns = std::chrono::duration_cast<std::chrono::nanoseconds>(t1 - t0).count();
+        std::cout << name << " " << ns / runs << " ns (avg over " << runs << " runs)\n";
+    };
+
+    time_kernel("FFT_PLAN0", RUNS, [&]() {
+        DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(host_plans.plan0, device_buf0, device_buf1, DEVICE_FFT_FORWARD));
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("FFT_PLAN1", RUNS, [&]() {
+        #ifdef __USE__FFTDX__
+            fft1_3d_kernel<typename FftdxFft1Ctx::FFT, FftdxFft1Ctx::VEC_SPLIT>
+            <<<ctx1.grid, ctx1.block, ctx1.shmem>>>(device_buf0, device_buf1, ctx1.ws);
+        #else
+            for (int i = 0; i < LOCAL_DIM * LOCAL_DIM; i++) {
+                Complex* row_ptr0 = device_buf0 + i * LOCAL_DIM;
+                Complex* row_ptr1 = device_buf1 + i * LOCAL_DIM;
+                DEVICE_FFT_SAFE_CALL(DEVICE_FFT_EXECZ2Z(host_plans.plan1[i % NUM_STREAMS], row_ptr0, row_ptr1, DEVICE_FFT_FORWARD));
+            }
+        #endif
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("PACK", RUNS, [&]() {
+        pack_forward_fft_3d<<<grid_pack, VEC>>>(device_buf0, device_buf1);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("UNPACK_TWIDDLE", RUNS, [&]() {
+        unpack_forward_fft_3d<true><<<grid_unpack, LOCAL_DIM>>>(device_buf0, device_buf1, device_twiddles);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("REPACK_XY", RUNS, [&]() {
+        repack_transpose_xy_3d<<<grid_repack, LOCAL_DIM>>>(device_buf0, device_buf1);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("REPACK_YZ", RUNS, [&]() {
+        repack_transpose_yz_3d<<<grid_repack, LOCAL_DIM>>>(device_buf0, device_buf1);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("INV_UNPACK_TWIDDLE", RUNS, [&]() {
+        unpack_inverse_fft_3d<true><<<grid_unpack, LOCAL_DIM>>>(device_buf0, device_buf1, device_twiddles);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    Complex unity = DEVICE_FFT_DOUBLECOMPLEX_CONSTRUCTOR(1.0, 0.0);
+    time_kernel("INV_PACK", RUNS, [&]() {
+        pack_inverse_fft_3d<true><<<grid_pack, VEC>>>(device_buf0, device_buf1, unity);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("INV_REPACK_XY", RUNS, [&]() {
+        inverse_repack_transpose_xy_3d<<<grid_repack, LOCAL_DIM>>>(device_buf0, device_buf1);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    time_kernel("INV_REPACK_YZ", RUNS, [&]() {
+        inverse_repack_transpose_yz_3d<<<grid_repack, LOCAL_DIM>>>(device_buf0, device_buf1);
+        DEVICE_RT_SAFE_CALL(DEVICE_SYNCHRONIZE());
+    });
+
+    destroy_plans_3d(host_plans);
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(device_buf0));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(device_buf1));
+    DEVICE_RT_SAFE_CALL(DEVICE_FREE(device_twiddles));
 }

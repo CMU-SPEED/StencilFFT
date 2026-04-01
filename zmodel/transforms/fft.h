@@ -61,4 +61,6 @@ void inverse_fft_3d(FftBuffers& buffers, MPI_Comm& row_comm, MPI_Comm& col_comm,
 
 void test_fft_3d();
 
+void benchmark_kernels_3d();
+
 #endif // __ZMODEL__FFT__
