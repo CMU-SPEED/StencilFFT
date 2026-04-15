@@ -1,12 +1,8 @@
 #ifndef __ZMODEL__DEVICE__MACROS__HEADER__
 #define __ZMODEL__DEVICE__MACROS__HEADER__
 
-//
-//  Copyright (c) 2018-2025, Carnegie Mellon University
-//  All rights reserved.
-//
-//  See LICENSE file for full information.
-//
+// Adapted from FFTX (https://github.com/spiralgen/fftx)
+// Copyright (c) Carnegie Mellon University. Licensed under BSD 2-Clause License.
 
 #include <iostream>
 
