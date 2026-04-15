@@ -1,6 +1,9 @@
 #include "heffte.h"
 #include <chrono>
 
+// Adapted from HeFFTe examples (https://github.com/icl-utk-edu/heffte)                                                 
+// Copyright (c) 2020, University of Tennessee. Licensed under BSD 3-Clause License.
+
 /*!
  * \brief HeFFTe example 1, simple DFT using two MPI ranks and FFTW backend.
  *

@@ -1,6 +1,6 @@
 This repository contains an implementation of the interleaved block cyclic data distribution which can be used for high performance distributed FFTs and Stencils.  This repo uses MPI and CUDA.
 
-This is research code.  It is set up for benchmarking on the CMU ECE number cluster and on NERSC Perlmutter.  For detailed benchmarking instructions see `benchmark.md`.  For an example of how the code would be used in an application see `example()` in `zmodel/main.cu`.
+This is research code.  It is set up for benchmarking on the CMU ECE number cluster and on NERSC Perlmutter.  For detailed benchmarking instructions see `./benchmark.md`.  For an example of how the code would be used in an application see `example()` in `./zmodel/main.cu`.
 
 # Interleaved Block Cyclic
 

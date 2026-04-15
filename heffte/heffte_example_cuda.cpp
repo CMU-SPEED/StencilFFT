@@ -3,6 +3,9 @@
 #include <iostream>
 #include "heffte_plan_logic.h"
 
+// Adapted from HeFFTe examples (https://github.com/icl-utk-edu/heffte)                                                 
+// Copyright (c) 2020, University of Tennessee. Licensed under BSD 3-Clause License.
+
 /*!
  * \brief HeFFTe example 5, using the cuFFT backend.
  *
